@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: sentry-db
+    environment:
+      POSTGRES_DB: sentry_db
+      POSTGRES_USER: ahmedalif
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./sentry-backend
+    container_name: sentry-backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://ahmedalif:password@db:5432/sentry_db
+
+  frontend:
+    build: ./sentry-frontend
+    container_name: sentry-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  
