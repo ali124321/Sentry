@@ -1,20 +1,16 @@
-import os
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from app.auth.config import auth_settings
 
-load_dotenv()
+class Base(DeclarativeBase):
+    pass
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_async_engine(auth_settings.DATABASE_URL, echo=True)
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_size=10,
-    max_overflow=20
+AsyncSessionLocal = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
 )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+async def get_db() -> AsyncSession:
+    async with AsyncSessionLocal() as session:
+        yield session
