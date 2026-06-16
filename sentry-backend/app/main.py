@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes.auth import router as auth_router
 from app.routes.protected import router as protected_router
 from app.routes.user import router as users_router
+from app.routes.ingest import router as ingest_router
 
 app = FastAPI(
     title="Sentry Backend",
@@ -23,6 +24,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(protected_router)
 app.include_router(users_router)
+app.include_router(ingest_router)
 
 @app.get("/")
 async def root():
