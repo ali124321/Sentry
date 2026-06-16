@@ -1,12 +1,17 @@
 import uuid
 from datetime import datetime
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 
 class UserCreate(BaseModel):
     email: EmailStr
     full_name: str
     password: str
-    role: str = "member"
+    role: str = "employee"
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[str] = None
 
 class UserResponse(BaseModel):
     id: uuid.UUID
@@ -17,4 +22,3 @@ class UserResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-    
