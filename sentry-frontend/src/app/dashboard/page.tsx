@@ -71,7 +71,12 @@ export default function Dashboard() {
   const [merging, setMerging] = useState<string | null>(null);
   const [qaMessage, setQaMessage] = useState("");
 
-  // Handle GitHub OAuth token in URL
+  // GitHub Sync state
+  const [syncStatus, setSyncStatus] = useState<any>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncTriggering, setSyncTriggering] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+
   useEffect(() => {
     const githubToken = searchParams.get("token");
     if (githubToken) {
@@ -191,12 +196,10 @@ export default function Dashboard() {
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.detail || "Ingestion failed");
       }
-
       const data: IngestionResult = await res.json();
       setIngestResult(data);
       setRunHistory((prev) => [
@@ -242,6 +245,40 @@ export default function Dashboard() {
     setMerging(null);
   };
 
+  const fetchSyncStatus = async () => {
+    setSyncLoading(true);
+    setSyncMessage("");
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/sync/status", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setSyncStatus(data);
+    } catch {
+      setSyncMessage("❌ Failed to fetch sync status");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const triggerSync = async () => {
+    setSyncTriggering(true);
+    setSyncMessage("");
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/sync/trigger", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      setSyncMessage("✅ " + data.message);
+      setTimeout(fetchSyncStatus, 3000);
+    } catch {
+      setSyncMessage("❌ Failed to trigger sync");
+    } finally {
+      setSyncTriggering(false);
+    }
+  };
+
   const statusBadge = (status: string) => (
     <span style={{
       padding: "3px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold",
@@ -262,6 +299,7 @@ export default function Dashboard() {
     { id: "audit", icon: "🔍", label: "Audit Logs", show: isAdmin },
     { id: "ingestion", icon: "📥", label: "Data Ingestion", show: isAdmin },
     { id: "identity-qa", icon: "🔎", label: "Identity QA", show: isAdmin },
+    { id: "sync", icon: "🔄", label: "GitHub Sync", show: isAdmin },
     { id: "settings", icon: "⚙️", label: "Settings", show: canViewSettings },
     { id: "profile", icon: "👤", label: "My Profile", show: true },
   ];
@@ -283,28 +321,18 @@ export default function Dashboard() {
                 { label: "Active Users", value: "1", color: "#34d399", icon: "👥" },
                 { label: "System Status", value: "Online", color: "#34d399", icon: "✅" },
               ].map((stat) => (
-                <div key={stat.label} style={{
-                  backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a",
-                  borderRadius: "16px", padding: "28px",
-                }}>
+                <div key={stat.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <p style={{ color: "#94a3b8", margin: 0, fontSize: "14px" }}>{stat.label}</p>
                     <span style={{ fontSize: "24px" }}>{stat.icon}</span>
                   </div>
-                  <p style={{ fontSize: "40px", fontWeight: "bold", color: stat.color, margin: "12px 0 0" }}>
-                    {stat.value}
-                  </p>
+                  <p style={{ fontSize: "40px", fontWeight: "bold", color: stat.color, margin: "12px 0 0" }}>{stat.value}</p>
                 </div>
               ))}
             </div>
             {user && (
-              <div style={{
-                backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a",
-                borderRadius: "16px", padding: "24px",
-              }}>
-                <h3 style={{ fontSize: "16px", fontWeight: "bold", marginBottom: "12px", marginTop: 0, color: "#94a3b8" }}>
-                  🔐 Your Permissions
-                </h3>
+              <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "24px" }}>
+                <h3 style={{ fontSize: "16px", fontWeight: "bold", marginBottom: "12px", marginTop: 0, color: "#94a3b8" }}>🔐 Your Permissions</h3>
                 <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                   {[
                     { label: "View Alerts", allowed: canViewAlerts },
@@ -360,106 +388,43 @@ export default function Dashboard() {
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>👥 User Management</h2>
             <p style={{ color: "#64748b", marginBottom: "24px" }}>Manage users, roles and access</p>
             {editingUser && (
-              <div style={{
-                position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-                backgroundColor: "rgba(0,0,0,0.7)",
-                display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-              }}>
-                <div style={{
-                  backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a",
-                  borderRadius: "16px", padding: "32px", width: "400px",
-                }}>
+              <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "32px", width: "400px" }}>
                   <h3 style={{ margin: "0 0 24px", fontSize: "20px" }}>Edit User</h3>
                   <label style={{ color: "#94a3b8", fontSize: "14px" }}>Full Name</label>
-                  <input
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    style={{
-                      width: "100%", padding: "12px", marginTop: "8px", marginBottom: "16px",
-                      backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a",
-                      borderRadius: "8px", color: "#fff", fontSize: "15px",
-                      boxSizing: "border-box" as const,
-                    }}
-                  />
+                  <input value={newName} onChange={(e) => setNewName(e.target.value)} style={{ width: "100%", padding: "12px", marginTop: "8px", marginBottom: "16px", backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "8px", color: "#fff", fontSize: "15px", boxSizing: "border-box" as const }} />
                   <label style={{ color: "#94a3b8", fontSize: "14px" }}>Role</label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value)}
-                    style={{
-                      width: "100%", padding: "12px", marginTop: "8px", marginBottom: "24px",
-                      backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a",
-                      borderRadius: "8px", color: "#fff", fontSize: "15px",
-                      boxSizing: "border-box" as const,
-                    }}
-                  >
-                    {["admin", "leadership", "manager", "employee"].map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
+                  <select value={newRole} onChange={(e) => setNewRole(e.target.value)} style={{ width: "100%", padding: "12px", marginTop: "8px", marginBottom: "24px", backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "8px", color: "#fff", fontSize: "15px", boxSizing: "border-box" as const }}>
+                    {["admin", "leadership", "manager", "employee"].map((r) => (<option key={r} value={r}>{r}</option>))}
                   </select>
                   <div style={{ display: "flex", gap: "12px" }}>
-                    <button onClick={handleSave} style={{
-                      flex: 1, padding: "12px", backgroundColor: "#7c3aed", color: "#fff",
-                      border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "bold",
-                    }}>Save</button>
-                    <button onClick={() => setEditingUser(null)} style={{
-                      flex: 1, padding: "12px", backgroundColor: "#374151", color: "#fff",
-                      border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "bold",
-                    }}>Cancel</button>
+                    <button onClick={handleSave} style={{ flex: 1, padding: "12px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "bold" }}>Save</button>
+                    <button onClick={() => setEditingUser(null)} style={{ flex: 1, padding: "12px", backgroundColor: "#374151", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontWeight: "bold" }}>Cancel</button>
                   </div>
                 </div>
               </div>
             )}
             {userMessage && (
-              <div style={{
-                padding: "12px 20px", borderRadius: "10px", marginBottom: "24px",
-                backgroundColor: userMessage.startsWith("✅") ? "#14532d" : "#7f1d1d",
-                border: `1px solid ${userMessage.startsWith("✅") ? "#16a34a" : "#dc2626"}`,
-                color: userMessage.startsWith("✅") ? "#34d399" : "#f87171",
-              }}>
+              <div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: userMessage.startsWith("✅") ? "#14532d" : "#7f1d1d", border: `1px solid ${userMessage.startsWith("✅") ? "#16a34a" : "#dc2626"}`, color: userMessage.startsWith("✅") ? "#34d399" : "#f87171" }}>
                 {userMessage}
               </div>
             )}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
-              <div style={{
-                display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr 2fr",
-                padding: "16px 24px", backgroundColor: "#0f0f1a",
-                borderBottom: "1px solid #2a2a4a", color: "#64748b",
-                fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const,
-              }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr 2fr", padding: "16px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
                 <span>Name</span><span>Email</span><span>Role</span><span>Status</span><span>Actions</span>
               </div>
               {users.length === 0 ? (
                 <p style={{ padding: "24px", color: "#64748b" }}>No users found.</p>
               ) : (
                 users.map((u) => (
-                  <div key={u.id} style={{
-                    display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr 2fr",
-                    padding: "16px 24px", borderBottom: "1px solid #2a2a4a",
-                    alignItems: "center", opacity: u.is_active ? 1 : 0.5,
-                  }}>
+                  <div key={u.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1fr 2fr", padding: "16px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center", opacity: u.is_active ? 1 : 0.5 }}>
                     <span style={{ fontWeight: "bold" }}>{u.full_name}</span>
                     <span style={{ color: "#94a3b8", fontSize: "14px" }}>{u.email}</span>
-                    <span>
-                      <span style={{
-                        backgroundColor: roleColor[u.role] || "#a78bfa", color: "#000",
-                        fontSize: "11px", fontWeight: "bold", padding: "3px 10px",
-                        borderRadius: "20px", textTransform: "uppercase" as const,
-                      }}>{u.role}</span>
-                    </span>
-                    <span style={{ color: u.is_active ? "#34d399" : "#f87171", fontWeight: "bold", fontSize: "13px" }}>
-                      {u.is_active ? "● Active" : "● Disabled"}
-                    </span>
+                    <span><span style={{ backgroundColor: roleColor[u.role] || "#a78bfa", color: "#000", fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase" as const }}>{u.role}</span></span>
+                    <span style={{ color: u.is_active ? "#34d399" : "#f87171", fontWeight: "bold", fontSize: "13px" }}>{u.is_active ? "● Active" : "● Disabled"}</span>
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <button onClick={() => handleEdit(u)} style={{
-                        padding: "6px 14px", backgroundColor: "#7c3aed", color: "#fff",
-                        border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px",
-                      }}>✏️ Edit</button>
-                      {u.is_active && (
-                        <button onClick={() => handleDisable(u)} style={{
-                          padding: "6px 14px", backgroundColor: "#dc2626", color: "#fff",
-                          border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px",
-                        }}>🚫 Disable</button>
-                      )}
+                      <button onClick={() => handleEdit(u)} style={{ padding: "6px 14px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px" }}>✏️ Edit</button>
+                      {u.is_active && (<button onClick={() => handleDisable(u)} style={{ padding: "6px 14px", backgroundColor: "#dc2626", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px" }}>🚫 Disable</button>)}
                     </div>
                   </div>
                 ))
@@ -479,11 +444,7 @@ export default function Dashboard() {
                 { label: "Warning", count: 0, color: "#fbbf24", bg: "#78350f", border: "#d97706", icon: "⚠️" },
                 { label: "Info", count: 0, color: "#60a5fa", bg: "#1e3a5f", border: "#2563eb", icon: "ℹ️" },
               ].map((s) => (
-                <div key={s.label} style={{
-                  backgroundColor: s.bg, border: `1px solid ${s.border}`,
-                  borderRadius: "12px", padding: "20px 24px",
-                  display: "flex", justifyContent: "space-between", alignItems: "center",
-                }}>
+                <div key={s.label} style={{ backgroundColor: s.bg, border: `1px solid ${s.border}`, borderRadius: "12px", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <p style={{ color: s.color, margin: "0 0 4px", fontSize: "13px", fontWeight: "bold" }}>{s.label}</p>
                     <p style={{ fontSize: "32px", fontWeight: "bold", color: "#fff", margin: 0 }}>{s.count}</p>
@@ -493,18 +454,10 @@ export default function Dashboard() {
               ))}
             </div>
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
-              <div style={{
-                display: "grid", gridTemplateColumns: "1fr 2fr 3fr 1.5fr 1fr",
-                padding: "16px 24px", backgroundColor: "#0f0f1a",
-                borderBottom: "1px solid #2a2a4a", color: "#64748b",
-                fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const,
-              }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 3fr 1.5fr 1fr", padding: "16px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
                 <span>Severity</span><span>Type</span><span>Message</span><span>Time</span><span>Status</span>
               </div>
-              <div style={{
-                padding: "60px 24px", display: "flex", flexDirection: "column",
-                alignItems: "center", gap: "12px", color: "#475569",
-              }}>
+              <div style={{ padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "#475569" }}>
                 <span style={{ fontSize: "48px" }}>🔕</span>
                 <p style={{ margin: 0, fontSize: "16px", fontWeight: "bold", color: "#64748b" }}>No alerts at this time</p>
                 <p style={{ margin: 0, fontSize: "13px" }}>When alerts are triggered, they will appear here</p>
@@ -514,14 +467,8 @@ export default function Dashboard() {
         );
 
       case "reports":
-        const actionCounts = auditLogs.reduce((acc: Record<string, number>, log) => {
-          acc[log.action] = (acc[log.action] || 0) + 1;
-          return acc;
-        }, {});
-        const roleCounts = users.reduce((acc: Record<string, number>, u) => {
-          acc[u.role] = (acc[u.role] || 0) + 1;
-          return acc;
-        }, {});
+        const actionCounts = auditLogs.reduce((acc: Record<string, number>, log) => { acc[log.action] = (acc[log.action] || 0) + 1; return acc; }, {});
+        const roleCounts = users.reduce((acc: Record<string, number>, u) => { acc[u.role] = (acc[u.role] || 0) + 1; return acc; }, {});
         const activeUsers = users.filter((u) => u.is_active).length;
         const disabledUsers = users.filter((u) => !u.is_active).length;
         const updateActions = auditLogs.filter((l) => l.action === "UPDATE_USER").length;
@@ -651,26 +598,12 @@ export default function Dashboard() {
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "24px" }}>
               <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px", marginTop: 0 }}>📂 Upload File</h3>
               <div style={{ border: "2px dashed #2a2a4a", borderRadius: "12px", padding: "32px", textAlign: "center", marginBottom: "20px", backgroundColor: "#0f0f1a" }}>
-                <p style={{ color: "#64748b", marginBottom: "16px" }}>
-                  {ingestFile ? `✅ Selected: ${ingestFile.name}` : "Select an .xlsx file to upload"}
-                </p>
+                <p style={{ color: "#64748b", marginBottom: "16px" }}>{ingestFile ? `✅ Selected: ${ingestFile.name}` : "Select an .xlsx file to upload"}</p>
                 <input type="file" accept=".xlsx" onChange={handleFileChange} style={{ display: "none" }} id="file-upload" />
-                <label htmlFor="file-upload" style={{ padding: "10px 24px", backgroundColor: "#312e81", color: "#a78bfa", borderRadius: "8px", cursor: "pointer", fontWeight: "bold", fontSize: "14px" }}>
-                  Browse File
-                </label>
+                <label htmlFor="file-upload" style={{ padding: "10px 24px", backgroundColor: "#312e81", color: "#a78bfa", borderRadius: "8px", cursor: "pointer", fontWeight: "bold", fontSize: "14px" }}>Browse File</label>
               </div>
-              {ingestError && (
-                <div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "16px", backgroundColor: "#7f1d1d", border: "1px solid #dc2626", color: "#f87171" }}>
-                  {ingestError}
-                </div>
-              )}
-              <button onClick={handleIngest} disabled={ingestLoading || !ingestFile} style={{
-                width: "100%", padding: "14px",
-                backgroundColor: ingestLoading || !ingestFile ? "#374151" : "#7c3aed",
-                color: "#fff", border: "none", borderRadius: "10px",
-                cursor: ingestLoading || !ingestFile ? "not-allowed" : "pointer",
-                fontSize: "16px", fontWeight: "bold",
-              }}>
+              {ingestError && (<div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "16px", backgroundColor: "#7f1d1d", border: "1px solid #dc2626", color: "#f87171" }}>{ingestError}</div>)}
+              <button onClick={handleIngest} disabled={ingestLoading || !ingestFile} style={{ width: "100%", padding: "14px", backgroundColor: ingestLoading || !ingestFile ? "#374151" : "#7c3aed", color: "#fff", border: "none", borderRadius: "10px", cursor: ingestLoading || !ingestFile ? "not-allowed" : "pointer", fontSize: "16px", fontWeight: "bold" }}>
                 {ingestLoading ? "⏳ Ingesting..." : "🚀 Start Ingestion"}
               </button>
             </div>
@@ -698,9 +631,7 @@ export default function Dashboard() {
                   {runHistory.map((run, i) => (
                     <div key={i} style={{ backgroundColor: "#0f0f1a", border: `1px solid ${run.status === "success" ? "#16a34a" : "#dc2626"}`, borderRadius: "10px", padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div>
-                        <span style={{ color: run.status === "success" ? "#34d399" : "#f87171", fontWeight: "bold", marginRight: "12px" }}>
-                          {run.status === "success" ? "✅ Success" : "❌ Failed"}
-                        </span>
+                        <span style={{ color: run.status === "success" ? "#34d399" : "#f87171", fontWeight: "bold", marginRight: "12px" }}>{run.status === "success" ? "✅ Success" : "❌ Failed"}</span>
                         {run.status === "success" ? (
                           <span style={{ color: "#94a3b8", fontSize: "14px" }}>{run.result.ingested} ingested · {run.result.skipped} skipped · {run.result.total_rows} total</span>
                         ) : (
@@ -721,38 +652,18 @@ export default function Dashboard() {
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🔎 Identity QA</h2>
             <p style={{ color: "#64748b", marginBottom: "24px" }}>Review and clean identity issues before trusting any KPI</p>
-            <button onClick={loadQA} disabled={qaLoading} style={{
-              padding: "10px 24px", backgroundColor: "#7c3aed", color: "#fff",
-              border: "none", borderRadius: "8px", cursor: qaLoading ? "not-allowed" : "pointer",
-              fontWeight: "bold", fontSize: "14px", marginBottom: "24px",
-              opacity: qaLoading ? 0.6 : 1,
-            }}>
+            <button onClick={loadQA} disabled={qaLoading} style={{ padding: "10px 24px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", cursor: qaLoading ? "not-allowed" : "pointer", fontWeight: "bold", fontSize: "14px", marginBottom: "24px", opacity: qaLoading ? 0.6 : 1 }}>
               {qaLoading ? "⏳ Loading..." : "🔄 Run QA Checks"}
             </button>
-            {qaError && (
-              <div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: "#7f1d1d", border: "1px solid #dc2626", color: "#f87171" }}>
-                {qaError}
-              </div>
-            )}
-            {qaMessage && (
-              <div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: "#14532d", border: "1px solid #16a34a", color: "#34d399" }}>
-                {qaMessage}
-              </div>
-            )}
+            {qaError && (<div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: "#7f1d1d", border: "1px solid #dc2626", color: "#f87171" }}>{qaError}</div>)}
+            {qaMessage && (<div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: "#14532d", border: "1px solid #16a34a", color: "#34d399" }}>{qaMessage}</div>)}
             {qa && qa.checks && (
               <>
-                <div style={{
-                  backgroundColor: qa.overall_status === "OK" ? "#14532d" : "#78350f",
-                  border: `1px solid ${qa.overall_status === "OK" ? "#16a34a" : "#d97706"}`,
-                  borderRadius: "12px", padding: "16px 24px", marginBottom: "24px",
-                  display: "flex", alignItems: "center", gap: "12px",
-                }}>
+                <div style={{ backgroundColor: qa.overall_status === "OK" ? "#14532d" : "#78350f", border: `1px solid ${qa.overall_status === "OK" ? "#16a34a" : "#d97706"}`, borderRadius: "12px", padding: "16px 24px", marginBottom: "24px", display: "flex", alignItems: "center", gap: "12px" }}>
                   <span style={{ fontSize: "24px" }}>{qa.overall_status === "OK" ? "✅" : "⚠️"}</span>
                   <div>
                     <p style={{ margin: 0, fontWeight: "bold", fontSize: "16px" }}>Overall Status: {qa.overall_status}</p>
-                    <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>
-                      {qa.overall_status === "OK" ? "All identity checks passed. KPIs can be trusted." : "Some checks need attention before trusting KPIs."}
-                    </p>
+                    <p style={{ margin: 0, fontSize: "13px", color: "#94a3b8" }}>{qa.overall_status === "OK" ? "All identity checks passed." : "Some checks need attention."}</p>
                   </div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "28px" }}>
@@ -793,17 +704,10 @@ export default function Dashboard() {
                           <span style={{ color: "#f87171", fontWeight: "bold" }}>{cluster.id_count}</span>
                           <div style={{ display: "flex", flexDirection: "column" as const, gap: "4px" }}>
                             {cluster.person_ids.map((id, i) => (
-                              <span key={id} style={{ fontSize: "11px", color: i === 0 ? "#34d399" : "#f87171" }}>
-                                {i === 0 ? "✅ Primary: " : "❌ Duplicate: "}{id.slice(0, 8)}...
-                              </span>
+                              <span key={id} style={{ fontSize: "11px", color: i === 0 ? "#34d399" : "#f87171" }}>{i === 0 ? "✅ Primary: " : "❌ Duplicate: "}{id.slice(0, 8)}...</span>
                             ))}
                           </div>
-                          <button onClick={() => handleMerge(cluster.person_ids[0], cluster.person_ids[1])} disabled={merging === cluster.person_ids[1]} style={{
-                            padding: "6px 14px", backgroundColor: "#7c3aed", color: "#fff",
-                            border: "none", borderRadius: "6px", cursor: "pointer",
-                            fontSize: "13px", fontWeight: "bold",
-                            opacity: merging === cluster.person_ids[1] ? 0.5 : 1,
-                          }}>
+                          <button onClick={() => handleMerge(cluster.person_ids[0], cluster.person_ids[1])} disabled={merging === cluster.person_ids[1]} style={{ padding: "6px 14px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold", opacity: merging === cluster.person_ids[1] ? 0.5 : 1 }}>
                             {merging === cluster.person_ids[1] ? "Merging..." : "🔗 Merge"}
                           </button>
                         </div>
@@ -831,6 +735,93 @@ export default function Dashboard() {
                 </div>
               </>
             )}
+          </div>
+        );
+
+      case "sync":
+        return (
+          <div>
+            <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🔄 GitHub Sync Status</h2>
+            <p style={{ color: "#64748b", marginBottom: "24px" }}>Connection state, last sync and rate limit budget</p>
+
+            {syncMessage && (
+              <div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: syncMessage.startsWith("✅") ? "#14532d" : "#7f1d1d", border: `1px solid ${syncMessage.startsWith("✅") ? "#16a34a" : "#dc2626"}`, color: syncMessage.startsWith("✅") ? "#34d399" : "#f87171" }}>
+                {syncMessage}
+              </div>
+            )}
+
+            {/* Connection & Rate Limit */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "24px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px", marginTop: 0 }}>🔗 Connection State</h3>
+              {syncLoading ? (
+                <p style={{ color: "#64748b" }}>Loading...</p>
+              ) : syncStatus?.rate_limit ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+                  {syncStatus.rate_limit.error ? (
+                    <div style={{ gridColumn: "1 / -1", padding: "16px", backgroundColor: "#7f1d1d", borderRadius: "10px", color: "#f87171" }}>
+                      ❌ {syncStatus.rate_limit.error}
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #16a34a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}>
+                        <p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Status</p>
+                        <p style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399", margin: 0 }}>● Connected</p>
+                        {syncStatus.rate_limit.user && (<p style={{ color: "#64748b", fontSize: "12px", margin: "4px 0 0" }}>@{syncStatus.rate_limit.user}</p>)}
+                      </div>
+                      <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}>
+                        <p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Rate Limit Remaining</p>
+                        <p style={{ fontSize: "32px", fontWeight: "bold", color: "#a78bfa", margin: 0 }}>{syncStatus.rate_limit.remaining ?? "—"}</p>
+                        <p style={{ color: "#64748b", fontSize: "12px", margin: "4px 0 0" }}>of {syncStatus.rate_limit.limit ?? "—"}</p>
+                      </div>
+                      <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}>
+                        <p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Next Sync</p>
+                        <p style={{ fontSize: "16px", fontWeight: "bold", color: "#60a5fa", margin: 0 }}>{syncStatus.next_scheduled}</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <p style={{ color: "#64748b" }}>Click "Refresh Status" to load connection info.</p>
+              )}
+            </div>
+
+            {/* Manual Trigger */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "24px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "12px", marginTop: 0 }}>⚡ Manual Sync</h3>
+              <p style={{ color: "#64748b", marginBottom: "16px", fontSize: "14px" }}>Trigger a GitHub sync immediately without waiting for the scheduled run.</p>
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button onClick={triggerSync} disabled={syncTriggering} style={{ padding: "12px 24px", backgroundColor: syncTriggering ? "#374151" : "#7c3aed", color: "#fff", border: "none", borderRadius: "10px", cursor: syncTriggering ? "not-allowed" : "pointer", fontSize: "15px", fontWeight: "bold" }}>
+                  {syncTriggering ? "⏳ Triggering..." : "🚀 Trigger Sync Now"}
+                </button>
+                <button onClick={fetchSyncStatus} style={{ padding: "12px 24px", backgroundColor: "#1d4ed8", color: "#fff", border: "none", borderRadius: "10px", cursor: "pointer", fontSize: "15px", fontWeight: "bold" }}>
+                  🔁 Refresh Status
+                </button>
+              </div>
+            </div>
+
+            {/* Last Runs */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "bold" }}>🕐 Last Sync Runs</h3>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                <span>Job</span><span>Status</span><span>Started</span><span>Finished</span>
+              </div>
+              {!syncStatus?.last_runs || syncStatus.last_runs.length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No sync runs yet. Click "Refresh Status" then trigger one above!</p>
+              ) : (
+                syncStatus.last_runs.map((run: any, i: number) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ fontSize: "14px" }}>{run.job_name}</span>
+                    <span style={{ color: run.status === "success" ? "#34d399" : run.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: "bold", fontSize: "13px" }}>
+                      {run.status === "success" ? "✅ Success" : run.status === "failed" ? "❌ Failed" : "⏳ Running"}
+                    </span>
+                    <span style={{ color: "#64748b", fontSize: "13px" }}>{run.started_at ?? "—"}</span>
+                    <span style={{ color: "#64748b", fontSize: "13px" }}>{run.finished_at ?? "—"}</span>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         );
 

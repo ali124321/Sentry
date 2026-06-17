@@ -10,6 +10,8 @@ from app.routes.github_sync import router as github_sync_router
 from app.routes.sync_status import router as sync_status_router
 from app.services.sync_job import start_scheduler, stop_scheduler
 from contextlib import asynccontextmanager
+from app.routes.attendance import router as attendance_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,6 +44,7 @@ app.include_router(identity_qa_router)
 app.include_router(github_auth_router)
 app.include_router(github_sync_router)
 app.include_router(sync_status_router)
+app.include_router(attendance_router)
 
 @app.get("/")
 async def root():
