@@ -4,6 +4,8 @@ from app.routes.auth import router as auth_router
 from app.routes.protected import router as protected_router
 from app.routes.user import router as users_router
 from app.routes.ingest import router as ingest_router
+from app.routes.identity_qa import router as identity_qa_router
+from app.routes.github_auth import router as github_auth_router
 
 app = FastAPI(
     title="Sentry Backend",
@@ -25,6 +27,8 @@ app.include_router(auth_router)
 app.include_router(protected_router)
 app.include_router(users_router)
 app.include_router(ingest_router)
+app.include_router(identity_qa_router)
+app.include_router(github_auth_router)
 
 @app.get("/")
 async def root():
