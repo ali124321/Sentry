@@ -77,6 +77,23 @@ export default function Dashboard() {
   const [syncTriggering, setSyncTriggering] = useState(false);
   const [syncMessage, setSyncMessage] = useState("");
 
+  // Attendance KPI state
+  const [attendanceData, setAttendanceData] = useState<{
+    daysPresent: any[];
+    avgArrival: any[];
+    sessionHours: any[];
+    trend: any[];
+    cohortSummary: any[];
+  }>({
+    daysPresent: [],
+    avgArrival: [],
+    sessionHours: [],
+    trend: [],
+    cohortSummary: [],
+  });
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceMonth, setAttendanceMonth] = useState("2026-01");
+
   useEffect(() => {
     const githubToken = searchParams.get("token");
     if (githubToken) {
@@ -106,6 +123,7 @@ export default function Dashboard() {
               .then((res) => res.json())
               .then((data) => setUsers(Array.isArray(data) ? data : []));
           }
+          fetchAttendance("2026-01");
         });
     }
   }, [token]);
@@ -138,10 +156,7 @@ export default function Dashboard() {
     if (!editingUser) return;
     const res = await fetch(`http://localhost:8000/api/v1/users/${editingUser.id}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ full_name: newName, role: newRole }),
     });
     if (res.ok) {
@@ -179,44 +194,25 @@ export default function Dashboard() {
   };
 
   const handleIngest = async () => {
-    if (!ingestFile) {
-      setIngestError("Please select a file first");
-      return;
-    }
+    if (!ingestFile) { setIngestError("Please select a file first"); return; }
     setIngestLoading(true);
     setIngestError("");
     setIngestResult(null);
-
     const formData = new FormData();
     formData.append("file", ingestFile);
-
     try {
       const res = await fetch("http://localhost:8000/api/v1/ingest/access", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Ingestion failed");
-      }
+      if (!res.ok) { const err = await res.json(); throw new Error(err.detail || "Ingestion failed"); }
       const data: IngestionResult = await res.json();
       setIngestResult(data);
-      setRunHistory((prev) => [
-        { timestamp: new Date().toLocaleString(), result: data, status: "success" },
-        ...prev,
-      ]);
+      setRunHistory((prev) => [{ timestamp: new Date().toLocaleString(), result: data, status: "success" }, ...prev]);
     } catch (err: any) {
       setIngestError(`❌ ${err.message}`);
-      setRunHistory((prev) => [
-        {
-          timestamp: new Date().toLocaleString(),
-          result: { message: "", total_rows: 0, ingested: 0, skipped: 0 },
-          status: "error",
-          error: err.message,
-        },
-        ...prev,
-      ]);
+      setRunHistory((prev) => [{ timestamp: new Date().toLocaleString(), result: { message: "", total_rows: 0, ingested: 0, skipped: 0 }, status: "error", error: err.message }, ...prev]);
     } finally {
       setIngestLoading(false);
     }
@@ -231,11 +227,8 @@ export default function Dashboard() {
       });
       const data = await res.json();
       setQA(data);
-    } catch {
-      setQaError("Failed to load QA data");
-    } finally {
-      setQaLoading(false);
-    }
+    } catch { setQaError("Failed to load QA data"); }
+    finally { setQaLoading(false); }
   };
 
   const handleMerge = async (primaryId: string, duplicateId: string) => {
@@ -254,11 +247,8 @@ export default function Dashboard() {
       });
       const data = await res.json();
       setSyncStatus(data);
-    } catch {
-      setSyncMessage("❌ Failed to fetch sync status");
-    } finally {
-      setSyncLoading(false);
-    }
+    } catch { setSyncMessage("❌ Failed to fetch sync status"); }
+    finally { setSyncLoading(false); }
   };
 
   const triggerSync = async () => {
@@ -272,10 +262,33 @@ export default function Dashboard() {
       const data = await res.json();
       setSyncMessage("✅ " + data.message);
       setTimeout(fetchSyncStatus, 3000);
-    } catch {
-      setSyncMessage("❌ Failed to trigger sync");
+    } catch { setSyncMessage("❌ Failed to trigger sync"); }
+    finally { setSyncTriggering(false); }
+  };
+
+  const fetchAttendance = async (month: string) => {
+    if (!token) return;
+    setAttendanceLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [dp, aa, sh, tr, cs] = await Promise.all([
+        fetch(`http://localhost:8000/api/v1/kpi/attendance/days-present?month=${month}`, { headers }).then(r => r.json()),
+        fetch(`http://localhost:8000/api/v1/kpi/attendance/avg-arrival?month=${month}`, { headers }).then(r => r.json()),
+        fetch(`http://localhost:8000/api/v1/kpi/attendance/session-hours?month=${month}`, { headers }).then(r => r.json()),
+        fetch(`http://localhost:8000/api/v1/kpi/attendance/trend`, { headers }).then(r => r.json()),
+        fetch(`http://localhost:8000/api/v1/kpi/attendance/cohort-summary?month=${month}`, { headers }).then(r => r.json()),
+      ]);
+      setAttendanceData({
+        daysPresent: Array.isArray(dp) ? dp : [],
+        avgArrival: Array.isArray(aa) ? aa : [],
+        sessionHours: Array.isArray(sh) ? sh : [],
+        trend: Array.isArray(tr) ? tr : [],
+        cohortSummary: Array.isArray(cs) ? cs : [],
+      });
+    } catch (e) {
+      console.error("Failed to fetch attendance KPIs", e);
     } finally {
-      setSyncTriggering(false);
+      setAttendanceLoading(false);
     }
   };
 
@@ -298,6 +311,7 @@ export default function Dashboard() {
     { id: "reports", icon: "📊", label: "View Reports", show: canViewReports },
     { id: "audit", icon: "🔍", label: "Audit Logs", show: isAdmin },
     { id: "ingestion", icon: "📥", label: "Data Ingestion", show: isAdmin },
+    { id: "attendance", icon: "📅", label: "Attendance KPIs", show: true },
     { id: "identity-qa", icon: "🔎", label: "Identity QA", show: isAdmin },
     { id: "sync", icon: "🔄", label: "GitHub Sync", show: isAdmin },
     { id: "settings", icon: "⚙️", label: "Settings", show: canViewSettings },
@@ -368,11 +382,7 @@ export default function Dashboard() {
                   { icon: "👥", text: "User management accessed", time: "10 min ago" },
                   { icon: "🔒", text: "Role-based access enforced", time: "15 min ago" },
                 ].map((item) => (
-                  <div key={item.text} style={{
-                    backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a",
-                    borderRadius: "10px", padding: "14px 18px",
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                  }}>
+                  <div key={item.text} style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "10px", padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span>{item.icon} {item.text}</span>
                     <span style={{ color: "#475569", fontSize: "13px" }}>{item.time}</span>
                   </div>
@@ -647,6 +657,175 @@ export default function Dashboard() {
           </div>
         );
 
+      case "attendance":
+        return (
+          <div>
+            <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>📅 Attendance KPIs</h2>
+            <p style={{ color: "#64748b", marginBottom: "24px" }}>Cohort attendance metrics · Data suppressed for groups under 5 people</p>
+
+            {/* Month selector */}
+            <div style={{ marginBottom: "28px", display: "flex", alignItems: "center", gap: "12px" }}>
+              <label style={{ color: "#94a3b8", fontSize: "14px" }}>Month:</label>
+              <input
+                type="month"
+                value={attendanceMonth}
+                onChange={(e) => { setAttendanceMonth(e.target.value); fetchAttendance(e.target.value); }}
+                style={{ padding: "8px 12px", backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "8px", color: "#fff", fontSize: "14px" }}
+              />
+              {attendanceLoading && <span style={{ color: "#64748b", fontSize: "13px" }}>Loading...</span>}
+            </div>
+
+            {/* Cohort Summary */}
+            {attendanceData.cohortSummary.length > 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "28px" }}>
+                {[
+                  { label: "Total Persons", value: attendanceData.cohortSummary[0]?.total_persons, icon: "👥", color: "#a78bfa" },
+                  { label: "Avg Days Present", value: attendanceData.cohortSummary[0]?.avg_days, icon: "📅", color: "#34d399" },
+                  { label: "Max Days", value: attendanceData.cohortSummary[0]?.max_days, icon: "⬆️", color: "#60a5fa" },
+                  { label: "Min Days", value: attendanceData.cohortSummary[0]?.min_days, icon: "⬇️", color: "#f87171" },
+                ].map((card) => (
+                  <div key={card.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <p style={{ color: "#94a3b8", margin: 0, fontSize: "13px" }}>{card.label}</p>
+                      <span style={{ fontSize: "20px" }}>{card.icon}</span>
+                    </div>
+                    <p style={{ fontSize: "32px", fontWeight: "bold", color: card.color, margin: "8px 0 0" }}>{card.value ?? "—"}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", marginBottom: "28px", color: "#64748b", fontSize: "14px" }}>
+                ⚠️ Cohort data suppressed — fewer than 5 persons in this period.
+              </div>
+            )}
+
+            {/* A1: Days Present */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A1 · Days Present</h3>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>Days each person was present in the office</p>
+              </div>
+              {attendanceData.daysPresent.length === 0 ? (
+                <p style={{ padding: "20px 24px", color: "#64748b" }}>No data — cohort suppressed or no records.</p>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "12px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>Person</span><span>Month</span><span>Days Present</span>
+                  </div>
+                  {attendanceData.daysPresent.map((r, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                      <span style={{ fontWeight: "bold" }}>{r.person_id}</span>
+                      <span style={{ color: "#94a3b8" }}>{r.month}</span>
+                      <span style={{ color: "#34d399", fontWeight: "bold", fontSize: "18px" }}>{r.days_present}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* A2: Average Arrival */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A2 · Average Arrival Time</h3>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>Average first-entry time per person · Caveat: based on badge swipe only</p>
+              </div>
+              {attendanceData.avgArrival.length === 0 ? (
+                <p style={{ padding: "20px 24px", color: "#64748b" }}>No data available.</p>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "12px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>Person</span><span>Month</span><span>Avg Arrival</span><span>Days</span>
+                  </div>
+                  {attendanceData.avgArrival.map((r, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                      <span style={{ fontWeight: "bold" }}>{r.person_id}</span>
+                      <span style={{ color: "#94a3b8" }}>{r.month}</span>
+                      <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{r.avg_arrival_time}</span>
+                      <span style={{ color: "#64748b" }}>{r.days_counted} day{r.days_counted > 1 ? "s" : ""}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* A4: Session Hours */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A4 · Office Session Hours</h3>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>Total and average hours in office · Caveat: requires both entry and exit swipe</p>
+              </div>
+              {attendanceData.sessionHours.length === 0 ? (
+                <p style={{ padding: "20px 24px", color: "#64748b" }}>⚠️ No session data — missing exit swipes or cohort suppressed (&lt;5 persons).</p>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "12px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>Person</span><span>Month</span><span>Total Hours</span><span>Avg/Day</span>
+                  </div>
+                  {attendanceData.sessionHours.map((r, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                      <span style={{ fontWeight: "bold" }}>{r.person_id}</span>
+                      <span style={{ color: "#94a3b8" }}>{r.month}</span>
+                      <span style={{ color: "#60a5fa", fontWeight: "bold" }}>{r.total_hours}h</span>
+                      <span style={{ color: "#94a3b8" }}>{r.avg_hours_per_day}h</span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* A5: Trend */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A5 · Attendance Trend</h3>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>Monthly trend · 🔺 marks change-points (&gt;20% shift)</p>
+              </div>
+              {attendanceData.trend.length === 0 ? (
+                <p style={{ padding: "20px 24px", color: "#64748b" }}>No trend data available.</p>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", padding: "12px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>Month</span><span>Persons</span><span>Total Days</span><span>Avg Days</span><span>Change</span>
+                  </div>
+                  {attendanceData.trend.map((r, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center", backgroundColor: r.is_change_point ? "rgba(251,191,36,0.05)" : "transparent" }}>
+                      <span style={{ fontWeight: "bold" }}>
+                        {r.is_change_point && <span style={{ color: "#fbbf24", marginRight: "6px" }}>🔺</span>}
+                        {r.month}
+                      </span>
+                      <span style={{ color: "#94a3b8" }}>{r.unique_persons}</span>
+                      <span style={{ color: "#94a3b8" }}>{r.total_days}</span>
+                      <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{r.avg_days_per_person}</span>
+                      <span style={{ color: r.change_from_prev > 0 ? "#34d399" : r.change_from_prev < 0 ? "#f87171" : "#64748b", fontWeight: "bold" }}>
+                        {r.change_from_prev > 0 ? "+" : ""}{r.change_from_prev}
+                      </span>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* Caveats */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px 24px" }}>
+              <h3 style={{ margin: "0 0 12px", fontSize: "14px", color: "#94a3b8" }}>📌 Data Caveats</h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {[
+                  "A1-A6 metrics are based on badge access swipe data only",
+                  "Session hours (A4) require both entry and exit swipes — missing exit = no session recorded",
+                  "Arrival consistency (A3) requires at least 3 days of data per person",
+                  "Groups with fewer than 5 persons are suppressed to protect privacy",
+                  "Timestamps are in Asia/Kolkata (IST) timezone",
+                  "Double-tap swipes within 5 seconds are deduplicated automatically",
+                ].map((caveat, i) => (
+                  <div key={i} style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
+                    <span style={{ color: "#fbbf24", fontSize: "12px", marginTop: "2px" }}>⚠️</span>
+                    <span style={{ color: "#64748b", fontSize: "13px" }}>{caveat}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+
       case "identity-qa":
         return (
           <div>
@@ -743,14 +922,11 @@ export default function Dashboard() {
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🔄 GitHub Sync Status</h2>
             <p style={{ color: "#64748b", marginBottom: "24px" }}>Connection state, last sync and rate limit budget</p>
-
             {syncMessage && (
               <div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: syncMessage.startsWith("✅") ? "#14532d" : "#7f1d1d", border: `1px solid ${syncMessage.startsWith("✅") ? "#16a34a" : "#dc2626"}`, color: syncMessage.startsWith("✅") ? "#34d399" : "#f87171" }}>
                 {syncMessage}
               </div>
             )}
-
-            {/* Connection & Rate Limit */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "24px" }}>
               <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px", marginTop: 0 }}>🔗 Connection State</h3>
               {syncLoading ? (
@@ -758,15 +934,12 @@ export default function Dashboard() {
               ) : syncStatus?.rate_limit ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
                   {syncStatus.rate_limit.error ? (
-                    <div style={{ gridColumn: "1 / -1", padding: "16px", backgroundColor: "#7f1d1d", borderRadius: "10px", color: "#f87171" }}>
-                      ❌ {syncStatus.rate_limit.error}
-                    </div>
+                    <div style={{ gridColumn: "1 / -1", padding: "16px", backgroundColor: "#7f1d1d", borderRadius: "10px", color: "#f87171" }}>❌ {syncStatus.rate_limit.error}</div>
                   ) : (
                     <>
                       <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #16a34a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}>
                         <p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Status</p>
                         <p style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399", margin: 0 }}>● Connected</p>
-                        {syncStatus.rate_limit.user && (<p style={{ color: "#64748b", fontSize: "12px", margin: "4px 0 0" }}>@{syncStatus.rate_limit.user}</p>)}
                       </div>
                       <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}>
                         <p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Rate Limit Remaining</p>
@@ -784,8 +957,6 @@ export default function Dashboard() {
                 <p style={{ color: "#64748b" }}>Click "Refresh Status" to load connection info.</p>
               )}
             </div>
-
-            {/* Manual Trigger */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "24px" }}>
               <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "12px", marginTop: 0 }}>⚡ Manual Sync</h3>
               <p style={{ color: "#64748b", marginBottom: "16px", fontSize: "14px" }}>Trigger a GitHub sync immediately without waiting for the scheduled run.</p>
@@ -798,8 +969,6 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
-
-            {/* Last Runs */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
                 <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "bold" }}>🕐 Last Sync Runs</h3>
@@ -842,26 +1011,11 @@ export default function Dashboard() {
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px" }}>
               {user && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                  <div>
-                    <p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Full Name</p>
-                    <p style={{ margin: 0, fontSize: "18px", fontWeight: "bold" }}>{user.full_name}</p>
-                  </div>
-                  <div>
-                    <p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Email</p>
-                    <p style={{ margin: 0, fontSize: "18px" }}>{user.email}</p>
-                  </div>
-                  <div>
-                    <p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Role</p>
-                    <span style={{ backgroundColor: roleColor[user.role] || "#a78bfa", color: "#000", fontSize: "12px", fontWeight: "bold", padding: "4px 12px", borderRadius: "20px", textTransform: "uppercase" as const }}>{user.role}</span>
-                  </div>
-                  <div>
-                    <p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Status</p>
-                    <p style={{ margin: 0, color: "#34d399", fontWeight: "bold" }}>● Active</p>
-                  </div>
-                  <div>
-                    <p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Member Since</p>
-                    <p style={{ margin: 0 }}>{new Date(user.created_at).toDateString()}</p>
-                  </div>
+                  <div><p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Full Name</p><p style={{ margin: 0, fontSize: "18px", fontWeight: "bold" }}>{user.full_name}</p></div>
+                  <div><p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Email</p><p style={{ margin: 0, fontSize: "18px" }}>{user.email}</p></div>
+                  <div><p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Role</p><span style={{ backgroundColor: roleColor[user.role] || "#a78bfa", color: "#000", fontSize: "12px", fontWeight: "bold", padding: "4px 12px", borderRadius: "20px", textTransform: "uppercase" as const }}>{user.role}</span></div>
+                  <div><p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Status</p><p style={{ margin: 0, color: "#34d399", fontWeight: "bold" }}>● Active</p></div>
+                  <div><p style={{ color: "#64748b", margin: "0 0 4px", fontSize: "13px" }}>Member Since</p><p style={{ margin: 0 }}>{new Date(user.created_at).toDateString()}</p></div>
                 </div>
               )}
             </div>
@@ -890,18 +1044,14 @@ export default function Dashboard() {
           <nav style={{ flex: 1, padding: "16px 0", overflowY: "auto" as const }}>
             {menuItems.filter((item) => item.show).map((item) => (
               <button key={item.id} onClick={() => setActiveMenu(item.id)} style={{
-                width: "100%", padding: "12px 20px",
-                display: "flex", alignItems: "center", gap: "12px",
+                width: "100%", padding: "12px 20px", display: "flex", alignItems: "center", gap: "12px",
                 backgroundColor: activeMenu === item.id ? "#2a2a4a" : "transparent",
                 color: activeMenu === item.id ? "#a78bfa" : "#94a3b8",
-                border: "none",
-                borderLeft: activeMenu === item.id ? "3px solid #a78bfa" : "3px solid transparent",
-                cursor: "pointer", fontSize: "14px",
-                fontWeight: activeMenu === item.id ? "bold" : "normal",
+                border: "none", borderLeft: activeMenu === item.id ? "3px solid #a78bfa" : "3px solid transparent",
+                cursor: "pointer", fontSize: "14px", fontWeight: activeMenu === item.id ? "bold" : "normal",
                 textAlign: "left" as const,
               }}>
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
+                <span>{item.icon}</span><span>{item.label}</span>
               </button>
             ))}
           </nav>
