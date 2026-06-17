@@ -5,6 +5,9 @@ class AuthSettings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     DATABASE_URL: str
+    GITHUB_TOKEN: str = ""
+    GITHUB_REPO: str = ""
+    GITHUB_LOCAL_CLONE_PATH: str = ""
 
     class Config:
         env_file = ".env"

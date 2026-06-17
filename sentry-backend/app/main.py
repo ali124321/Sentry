@@ -6,6 +6,16 @@ from app.routes.user import router as users_router
 from app.routes.ingest import router as ingest_router
 from app.routes.identity_qa import router as identity_qa_router
 from app.routes.github_auth import router as github_auth_router
+from app.routes.github_sync import router as github_sync_router
+from app.routes.sync_status import router as sync_status_router
+from app.services.sync_job import start_scheduler, stop_scheduler
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+    yield
+    stop_scheduler()
 
 app = FastAPI(
     title="Sentry Backend",
@@ -13,6 +23,7 @@ app = FastAPI(
     description="Sentry Backend API",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -29,6 +40,8 @@ app.include_router(users_router)
 app.include_router(ingest_router)
 app.include_router(identity_qa_router)
 app.include_router(github_auth_router)
+app.include_router(github_sync_router)
+app.include_router(sync_status_router)
 
 @app.get("/")
 async def root():

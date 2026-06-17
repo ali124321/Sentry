@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .env
 
+.env
+sentry-backend/.env
+.env
+sentry-backend/.env
+sentry-backend/.env
+.env
