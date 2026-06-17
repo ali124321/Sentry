@@ -11,6 +11,7 @@ from app.routes.sync_status import router as sync_status_router
 from app.services.sync_job import start_scheduler, stop_scheduler
 from contextlib import asynccontextmanager
 from app.routes.attendance import router as attendance_router
+from app.routes.attendance_kpi import router as attendance_kpi_router
 
 
 @asynccontextmanager
@@ -45,6 +46,7 @@ app.include_router(github_auth_router)
 app.include_router(github_sync_router)
 app.include_router(sync_status_router)
 app.include_router(attendance_router)
+app.include_router(attendance_kpi_router)
 
 @app.get("/")
 async def root():
