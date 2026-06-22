@@ -3,6 +3,59 @@ import ProtectedRoute from "@/lib/auth/ProtectedRoute";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, AreaChart, ResponsiveContainer } from "recharts";
+
+// ── Chart components ──────────────────────────────────────────────────────────
+
+function OccupancyTrendChart({ data }: { data: any[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#2a2a4a" />
+        <XAxis dataKey="day" stroke="#64748b" fontSize={12} />
+        <YAxis stroke="#64748b" fontSize={12} />
+        <Tooltip
+          contentStyle={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "8px" }}
+          labelStyle={{ color: "#fff" }}
+        />
+        <Legend />
+        <Line type="monotone" dataKey="peak_occupancy" stroke="#a78bfa" strokeWidth={2} name="Peak Occupancy" dot={false} />
+        <Line type="monotone" dataKey="avg_occupancy" stroke="#34d399" strokeWidth={2} name="Avg Occupancy" dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function OccupancyForecastChart({ data }: { data: any[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#2a2a4a" />
+        <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
+        <YAxis stroke="#64748b" fontSize={12} />
+        <Tooltip
+          contentStyle={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "8px" }}
+          labelStyle={{ color: "#fff" }}
+        />
+        <Legend />
+        <Area
+          type="monotone" dataKey="upper_bound" stroke="transparent"
+          fill="#7c3aed" fillOpacity={0.2} name="Upper Bound"
+        />
+        <Area
+          type="monotone" dataKey="predicted" stroke="#a78bfa"
+          fill="#7c3aed" fillOpacity={0.3} strokeWidth={2} name="Predicted"
+        />
+        <Area
+          type="monotone" dataKey="lower_bound" stroke="transparent"
+          fill="#0f0f1a" fillOpacity={1} name="Lower Bound"
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type IngestionResult = {
   message: string;
@@ -43,6 +96,8 @@ type QASummary = {
     };
   };
 };
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { logout, token, login } = useAuth();
@@ -94,6 +149,12 @@ export default function Dashboard() {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceMonth, setAttendanceMonth] = useState("2026-01");
 
+  // Occupancy state
+  const [occupancyPeak, setOccupancyPeak] = useState<any[]>([]);
+  const [occupancyTrend, setOccupancyTrend] = useState<any[]>([]);
+  const [occupancyForecast, setOccupancyForecast] = useState<any[]>([]);
+  const [mobileAdoption, setMobileAdoption] = useState<any[]>([]);
+
   useEffect(() => {
     const githubToken = searchParams.get("token");
     if (githubToken) {
@@ -124,6 +185,30 @@ export default function Dashboard() {
               .then((data) => setUsers(Array.isArray(data) ? data : []));
           }
           fetchAttendance("2026-01");
+
+          fetch("http://localhost:8000/api/v1/occupancy-kpi/peak?days=365", {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((res) => res.json())
+            .then((data) => setOccupancyPeak(data.data || []));
+
+          fetch("http://localhost:8000/api/v1/occupancy-kpi/trend?days=365", {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((res) => res.json())
+            .then((data) => setOccupancyTrend(data.data || []));
+
+          fetch("http://localhost:8000/api/v1/occupancy-kpi/forecast?forecast_days=7", {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((res) => res.json())
+            .then((data) => setOccupancyForecast(data.forecast || []));
+
+          fetch("http://localhost:8000/api/v1/occupancy-kpi/mobile-adoption?days=365", {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then((res) => res.json())
+            .then((data) => setMobileAdoption(data.data || []));
         });
     }
   }, [token]);
@@ -311,6 +396,7 @@ export default function Dashboard() {
     { id: "reports", icon: "📊", label: "View Reports", show: canViewReports },
     { id: "audit", icon: "🔍", label: "Audit Logs", show: isAdmin },
     { id: "ingestion", icon: "📥", label: "Data Ingestion", show: isAdmin },
+    { id: "occupancy", icon: "🏢", label: "Occupancy", show: true },  // ← NEW
     { id: "attendance", icon: "📅", label: "Attendance KPIs", show: true },
     { id: "identity-qa", icon: "🔎", label: "Identity QA", show: isAdmin },
     { id: "sync", icon: "🔄", label: "GitHub Sync", show: isAdmin },
@@ -657,13 +743,100 @@ export default function Dashboard() {
           </div>
         );
 
+      // ── NEW: Occupancy ────────────────────────────────────────────────────────
+      case "occupancy":
+        return (
+          <div>
+            <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🏢 Occupancy</h2>
+            <p style={{ color: "#64748b", marginBottom: "32px" }}>Space occupancy analytics and forecasts</p>
+
+            {/* Peak Occupancy Cards */}
+            <div style={{ marginBottom: "32px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "16px", marginTop: 0 }}>📊 Peak Occupancy by Location</h3>
+              {occupancyPeak.length === 0 ? (
+                <p style={{ color: "#64748b" }}>No data available.</p>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+                  {occupancyPeak.map((loc) => (
+                    <div key={loc.location} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "24px" }}>
+                      <p style={{ color: "#94a3b8", margin: "0 0 8px", fontSize: "13px" }}>{loc.location || "Unknown"}</p>
+                      <p style={{ fontSize: "36px", fontWeight: "bold", color: "#a78bfa", margin: "0 0 8px" }}>
+                        {loc.all_time_peak}
+                      </p>
+                      <p style={{ color: "#64748b", fontSize: "13px", margin: 0 }}>
+                        Peak · Avg: {loc.avg_daily_peak.toFixed(1)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Occupancy Trend Chart */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "32px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px", marginTop: 0 }}>
+                📈 Daily Occupancy Trend
+              </h3>
+              {occupancyTrend.length === 0 ? (
+                <p style={{ color: "#64748b" }}>No trend data available.</p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <OccupancyTrendChart data={occupancyTrend} />
+                </div>
+              )}
+            </div>
+
+            {/* Forecast Chart */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "32px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "8px", marginTop: 0 }}>
+                🔮 7-Day Occupancy Forecast
+              </h3>
+              <p style={{ color: "#64748b", fontSize: "13px", marginBottom: "20px" }}>
+                Shaded area shows 95% confidence interval
+              </p>
+              {occupancyForecast.length === 0 ? (
+                <p style={{ color: "#64748b" }}>Not enough data for forecasting yet.</p>
+              ) : (
+                <OccupancyForecastChart data={occupancyForecast} />
+              )}
+            </div>
+
+            {/* Mobile vs Card Adoption */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px", marginTop: 0 }}>
+                📱 Mobile vs Card Adoption
+              </h3>
+              {mobileAdoption.length === 0 ? (
+                <p style={{ color: "#64748b" }}>No adoption data available.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {mobileAdoption.map((loc) => (
+                    <div key={loc.location} style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px" }}>
+                        <span style={{ fontWeight: "bold" }}>{loc.location}</span>
+                        <span style={{ color: "#64748b", fontSize: "13px" }}>{loc.total_events} total events</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                        <div style={{ flex: loc.mobile_adoption_rate, backgroundColor: "#7c3aed", height: "12px", borderRadius: "6px 0 0 6px" }} />
+                        <div style={{ flex: loc.card_adoption_rate, backgroundColor: "#0891b2", height: "12px", borderRadius: "0 6px 6px 0", display: loc.card_adoption_rate === 0 ? "none" : "block" }} />
+                      </div>
+                      <div style={{ display: "flex", gap: "16px", fontSize: "13px" }}>
+                        <span style={{ color: "#a78bfa" }}>📱 Mobile: {loc.mobile_adoption_rate}%</span>
+                        <span style={{ color: "#60a5fa" }}>💳 Card: {loc.card_adoption_rate}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
       case "attendance":
         return (
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>📅 Attendance KPIs</h2>
             <p style={{ color: "#64748b", marginBottom: "24px" }}>Cohort attendance metrics · Data suppressed for groups under 5 people</p>
-
-            {/* Month selector */}
             <div style={{ marginBottom: "28px", display: "flex", alignItems: "center", gap: "12px" }}>
               <label style={{ color: "#94a3b8", fontSize: "14px" }}>Month:</label>
               <input
@@ -674,8 +847,6 @@ export default function Dashboard() {
               />
               {attendanceLoading && <span style={{ color: "#64748b", fontSize: "13px" }}>Loading...</span>}
             </div>
-
-            {/* Cohort Summary */}
             {attendanceData.cohortSummary.length > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "28px" }}>
                 {[
@@ -698,8 +869,6 @@ export default function Dashboard() {
                 ⚠️ Cohort data suppressed — fewer than 5 persons in this period.
               </div>
             )}
-
-            {/* A1: Days Present */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A1 · Days Present</h3>
@@ -722,8 +891,6 @@ export default function Dashboard() {
                 </>
               )}
             </div>
-
-            {/* A2: Average Arrival */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A2 · Average Arrival Time</h3>
@@ -747,8 +914,6 @@ export default function Dashboard() {
                 </>
               )}
             </div>
-
-            {/* A4: Session Hours */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A4 · Office Session Hours</h3>
@@ -772,8 +937,6 @@ export default function Dashboard() {
                 </>
               )}
             </div>
-
-            {/* A5: Trend */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A5 · Attendance Trend</h3>
@@ -803,8 +966,6 @@ export default function Dashboard() {
                 </>
               )}
             </div>
-
-            {/* Caveats */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px 24px" }}>
               <h3 style={{ margin: "0 0 12px", fontSize: "14px", color: "#94a3b8" }}>📌 Data Caveats</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

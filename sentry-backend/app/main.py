@@ -14,7 +14,7 @@ from app.routes.attendance import router as attendance_router
 from app.routes.attendance_kpi import router as attendance_kpi_router
 from app.routes.occupancy import router as occupancy_router
 from app.routes.occupancy_kpi import router as occupancy_kpi_router
-
+from app.routes.anomaly import router as anomaly_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,7 +51,7 @@ app.include_router(attendance_router)
 app.include_router(attendance_kpi_router)
 app.include_router(occupancy_router)
 app.include_router(occupancy_kpi_router)
-
+app.include_router(anomaly_router)
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Sentry Backend API!"}

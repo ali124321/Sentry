@@ -1,5 +1,11 @@
 from alembic import op
 
+revision = '139baed8dcc5'
+down_revision = '4a80f0ebc33d'
+branch_labels = None
+depends_on = None
+
+
 def upgrade():
     # View: first entry per person per day
     op.execute("""
