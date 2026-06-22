@@ -31,6 +31,20 @@ async def seed_anomaly_queue(
     return {"message": "Anomaly queue seeded successfully"}
 
 
+@router.post("/score")
+async def run_anomaly_scoring(
+    current_user=Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the Isolation Forest anomaly scoring job. Never auto-acts — only flags for human review."""
+    from app.pipeline.isolation_forest_model import run_anomaly_scoring_job
+    result = await run_anomaly_scoring_job(db)
+    return {
+        "message": "Anomaly scoring complete. Flagged events written to review queue for human review only.",
+        **result,
+    }
+
+
 @router.get("/denied-access")
 async def get_denied_access(
     current_user=Depends(require_role("admin", "leadership", "manager")),
