@@ -88,6 +88,10 @@ export default function Dashboard() {
   const [occupancyForecast, setOccupancyForecast] = useState<any[]>([]);
   const [mobileAdoption, setMobileAdoption] = useState<any[]>([]);
 
+  const [codeQualitySummary, setCodeQualitySummary] = useState<any>(null);
+  const [complexityFiles, setComplexityFiles] = useState<any[]>([]);
+  const [churnHotspots, setChurnHotspots] = useState<any[]>([]);
+  const [secretAlerts, setSecretAlerts] = useState<any[]>([]);
   // Security state
   const [securityMetrics, setSecurityMetrics] = useState<any>(null);
   const [securityQueue, setSecurityQueue] = useState<any[]>([]);
@@ -115,6 +119,10 @@ export default function Dashboard() {
           fetch("http://localhost:8000/api/v1/occupancy-kpi/trend?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyTrend(data.data || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/forecast?forecast_days=7", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyForecast(data.forecast || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/mobile-adoption?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setMobileAdoption(data.data || []));
+        fetch("http://localhost:8000/api/code-quality/summary?repository_id=1", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setCodeQualitySummary(data)).catch(() => setCodeQualitySummary(null));
+          fetch("http://localhost:8000/api/code-quality/complexity?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setComplexityFiles(data.files || [])).catch(() => setComplexityFiles([]));
+          fetch("http://localhost:8000/api/code-quality/churn?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setChurnHotspots(data.hotspots || [])).catch(() => setChurnHotspots([]));
+          fetch("http://localhost:8000/api/code-quality/secrets?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSecretAlerts(data.alerts || [])).catch(() => setSecretAlerts([]));
         });
     }
   }, [token]);
@@ -274,6 +282,7 @@ export default function Dashboard() {
     { id: "audit", icon: "🔍", label: "Audit Logs", show: isAdmin },
     { id: "ingestion", icon: "📥", label: "Data Ingestion", show: isAdmin },
     { id: "occupancy", icon: "🏢", label: "Occupancy", show: true },
+    { id: "code-quality", icon: "🛠️", label: "Code Quality", show: true },
     { id: "attendance", icon: "📅", label: "Attendance KPIs", show: true },
     { id: "identity-qa", icon: "🔎", label: "Identity QA", show: isAdmin },
     { id: "sync", icon: "🔄", label: "GitHub Sync", show: isAdmin },
@@ -550,6 +559,119 @@ export default function Dashboard() {
             )}
           </div>
         );
+        case "code-quality": {
+        const riskColor = (score: number) => {
+          if (score >= 60) return "#f87171";
+          if (score >= 30) return "#fbbf24";
+          return "#34d399";
+        };
+        const risk = codeQualitySummary?.overall_risk_score ?? 0;
+
+        return (
+          <div>
+            <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🛠️ Code Quality</h2>
+            <p style={{ color: "#64748b", marginBottom: "32px" }}>Complexity, churn, lint density and secret/vuln alerts</p>
+
+            {!codeQualitySummary ? (
+              <p style={{ color: "#64748b" }}>Loading code quality data...</p>
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: "16px", marginBottom: "24px" }}>
+                  <div style={{ backgroundColor: "#1a1a2e", border: `1px solid ${riskColor(risk)}`, borderRadius: "16px", padding: "24px", textAlign: "center" as const }}>
+                    <p style={{ color: "#94a3b8", margin: "0 0 8px", fontSize: "13px" }}>Overall Risk Score</p>
+                    <p style={{ fontSize: "44px", fontWeight: "bold", color: riskColor(risk), margin: 0 }}>{risk}</p>
+                    <p style={{ color: "#64748b", margin: "8px 0 0", fontSize: "12px" }}>out of 100</p>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
+                    {[
+                      { label: "High Complexity Files", value: codeQualitySummary.complexity?.high_complexity_files ?? 0, icon: "🧠", color: "#a78bfa" },
+                      { label: "Critical Hotspots", value: codeQualitySummary.churn?.critical_hotspots ?? 0, icon: "🔥", color: "#fb923c" },
+                      { label: "Open Lint Errors", value: codeQualitySummary.lint?.errors ?? 0, icon: "🐛", color: "#facc15" },
+                      { label: "Open Secret Alerts", value: codeQualitySummary.secrets?.open_alerts ?? 0, icon: "🔐", color: "#f87171" },
+                    ].map((card) => (
+                      <div key={card.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <p style={{ color: "#94a3b8", margin: 0, fontSize: "13px" }}>{card.label}</p>
+                          <span style={{ fontSize: "20px" }}>{card.icon}</span>
+                        </div>
+                        <p style={{ fontSize: "32px", fontWeight: "bold", color: card.color, margin: "8px 0 0" }}>{card.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px" }}>🧠 Top Complex Files</h3>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>File</span><span>Language</span><span>Complexity</span><span>LOC</span>
+                  </div>
+                  {complexityFiles.length === 0 ? (
+                    <p style={{ padding: "24px", color: "#64748b" }}>No complexity data yet. Run the scanners to populate this.</p>
+                  ) : (
+                    complexityFiles.map((f: any, i: number) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                        <span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span>
+                        <span style={{ color: "#94a3b8", fontSize: "13px" }}>{f.language || "—"}</span>
+                        <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{f.complexity_score}</span>
+                        <span style={{ color: "#64748b", fontSize: "13px" }}>{f.loc ?? "—"}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px" }}>🔥 Churn Hotspots</h3>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>File</span><span>Churn</span><span>Commits</span><span>Hotspot Score</span>
+                  </div>
+                  {churnHotspots.length === 0 ? (
+                    <p style={{ padding: "24px", color: "#64748b" }}>No churn data yet.</p>
+                  ) : (
+                    churnHotspots.map((f: any, i: number) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                        <span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span>
+                        <span style={{ color: "#fb923c" }}>{f.churn ?? 0}</span>
+                        <span style={{ color: "#64748b", fontSize: "13px" }}>{f.commit_count ?? 0}</span>
+                        <span style={{ color: "#fb923c", fontWeight: "bold" }}>{f.churn_complexity_score ?? "—"}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px" }}>🔐 Secret / Vuln Alert Feed</h3>
+                  </div>
+                  {secretAlerts.length === 0 ? (
+                    <p style={{ padding: "24px", color: "#64748b" }}>No open secret alerts. ✅</p>
+                  ) : (
+                    secretAlerts.map((a: any, i: number) => (
+                      <div key={a.id ?? i} style={{ padding: "14px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <span style={{ backgroundColor: "#7f1d1d", color: "#f87171", fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", marginRight: "10px" }}>
+                            {a.secret_type_display || a.secret_type}
+                          </span>
+                          <span style={{ fontSize: "13px", fontFamily: "monospace", color: "#94a3b8" }}>
+                            {a.filename}{a.line_number ? `:${a.line_number}` : ""}
+                          </span>
+                        </div>
+                        <span style={{ color: "#64748b", fontSize: "12px" }}>
+                          {a.created_at ? new Date(a.created_at).toLocaleDateString() : ""}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      }
+
 
       case "occupancy":
         return (
@@ -604,6 +726,7 @@ export default function Dashboard() {
             </div>
           </div>
         );
+
 
       case "attendance":
         return (
