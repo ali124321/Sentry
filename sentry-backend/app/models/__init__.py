@@ -4,3 +4,4 @@ from app.models.access_event import RawAccessEvent, FactAccessEvent
 from app.models.github import GitFileChange, PullRequest, PRReview, CICheckRun, Deployment
 from app.models.sync_status import SyncStatus
 from app.models.anomaly import AnomalyReviewQueue
+from app.models.szz import SZZTrace

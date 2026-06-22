@@ -19,7 +19,7 @@ from app.routes.security import router as security_router
 from app.routes.code_quality import router as code_quality_router
 from app.routes.code_quality_actions import router as code_quality_actions_router
 from app.routes.dora import router as dora_router
-
+from app.routes.dora_kpi import router as dora_kpi_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     start_scheduler()
@@ -60,6 +60,7 @@ app.include_router(security_router)
 app.include_router(code_quality_router)
 app.include_router(code_quality_actions_router)
 app.include_router(dora_router)
+app.include_router(dora_kpi_router)
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Sentry Backend API!"}
