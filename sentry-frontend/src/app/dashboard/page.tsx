@@ -100,6 +100,7 @@ export default function Dashboard() {
   const [doraReviewLatency, setDoraReviewLatency] = useState<any[]>([]);
   const [szzTraces, setSzzTraces] = useState<any[]>([]);
   const [szzTopBugIntroducers, setSzzTopBugIntroducers] = useState<any[]>([]);
+  const [riskWatchlist, setRiskWatchlist] = useState<any[]>([]);
   // Security state
   const [securityMetrics, setSecurityMetrics] = useState<any>(null);
   const [securityQueue, setSecurityQueue] = useState<any[]>([]);
@@ -143,7 +144,7 @@ export default function Dashboard() {
           fetch("http://localhost:8000/api/v1/dora-kpi/review-latency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraReviewLatency(data.data || [])).catch(() => setDoraReviewLatency([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/szz/traces?limit=30", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSzzTraces(Array.isArray(data) ? data : [])).catch(() => setSzzTraces([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/szz/top-bug-introducers?limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSzzTopBugIntroducers(Array.isArray(data) ? data : [])).catch(() => setSzzTopBugIntroducers([]));
-        
+          fetch("http://localhost:8000/api/v1/defect-risk/watchlist?limit=20", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setRiskWatchlist(data.watchlist || [])).catch(() => setRiskWatchlist([]));
         });
     }
   }, [token]);
@@ -684,6 +685,35 @@ export default function Dashboard() {
                         <span style={{ color: "#64748b", fontSize: "12px" }}>
                           {a.created_at ? new Date(a.created_at).toLocaleDateString() : ""}
                         </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginTop: "24px" }}>
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px" }}>🎯 Risk Watchlist</h3>
+                    <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>Files ranked by predicted defect risk — focus code review here</p>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "0.5fr 2.5fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>#</span><span>File</span><span>Risk Score</span><span>Level</span><span>Churn (30d)</span><span>Authors</span>
+                  </div>
+                  {riskWatchlist.length === 0 ? (
+                    <p style={{ padding: "24px", color: "#64748b" }}>No files scored yet. Run the defect-risk model after the code-quality scanners populate data.</p>
+                  ) : (
+                    riskWatchlist.map((f: any) => (
+                      <div key={f.rank} style={{ display: "grid", gridTemplateColumns: "0.5fr 2.5fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                        <span style={{ color: "#64748b", fontWeight: "bold" }}>{f.rank}</span>
+                        <span style={{ fontFamily: "monospace", fontSize: "13px" }}>{f.filename}</span>
+                        <span style={{ color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399", fontWeight: "bold" }}>{f.risk_score}</span>
+                        <span>
+                          <span style={{
+                            backgroundColor: f.risk_level === "high" ? "#7f1d1d" : f.risk_level === "medium" ? "#78350f" : "#14532d",
+                            color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399",
+                            fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase" as const,
+                          }}>{f.risk_level}</span>
+                        </span>
+                        <span style={{ color: "#94a3b8" }}>{f.churn_30d ?? "—"}</span>
+                        <span style={{ color: "#94a3b8" }}>{f.distinct_authors_30d ?? "—"}</span>
                       </div>
                     ))
                   )}

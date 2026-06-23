@@ -57,3 +57,57 @@ async def get_defect_risk_scores(
         }
         for row in rows
     ]
+
+
+@router.get("/watchlist")
+async def get_risk_watchlist(
+    repository_id: int = None,
+    limit: int = 20,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ranked watchlist of files by predicted defect risk, for code review prioritization."""
+    query = """
+        SELECT
+            filename, repository_id, defect_risk_score, defect_risk_label,
+            churn_30d, churn_90d, complexity_score, distinct_authors_30d,
+            commit_count_90d, defect_risk_scored_at
+        FROM code_file_metric
+        WHERE defect_risk_score IS NOT NULL
+    """
+    params = {"limit": limit}
+    if repository_id:
+        query += " AND repository_id = :repository_id"
+        params["repository_id"] = repository_id
+    query += " ORDER BY defect_risk_score DESC LIMIT :limit"
+
+    result = await db.execute(text(query), params)
+    rows = result.fetchall()
+
+    watchlist = [
+        {
+            "rank": i + 1,
+            "filename": row.filename,
+            "repository_id": row.repository_id,
+            "risk_score": round(float(row.defect_risk_score), 4) if row.defect_risk_score is not None else None,
+            "risk_level": (
+                "high" if row.defect_risk_score >= 0.7
+                else "medium" if row.defect_risk_score >= 0.4
+                else "low"
+            ) if row.defect_risk_score is not None else None,
+            "is_known_buggy": row.defect_risk_label,
+            "churn_30d": row.churn_30d,
+            "churn_90d": row.churn_90d,
+            "complexity_score": float(row.complexity_score) if row.complexity_score is not None else None,
+            "distinct_authors_30d": row.distinct_authors_30d,
+            "commit_count_90d": row.commit_count_90d,
+            "scored_at": str(row.defect_risk_scored_at) if row.defect_risk_scored_at else None,
+        }
+        for i, row in enumerate(rows)
+    ]
+
+    return {
+        "total": len(watchlist),
+        "note": "Files require code-quality scanners and defect-risk model run (E6) before scores appear here.",
+        "watchlist": watchlist,
+    }
