@@ -73,3 +73,18 @@ async def trigger_sync(
     from app.services.sync_job import run_github_sync
     asyncio.create_task(run_github_sync())
     return {"message": "GitHub sync triggered in background"}
+@router.get("/schedule")
+async def get_schedule(
+    current_user=Depends(require_role("admin")),
+):
+    """List all scheduled pipeline jobs and their next run times."""
+    from app.services.sync_job import scheduler
+    jobs = []
+    for job in scheduler.get_jobs():
+        jobs.append({
+            "id": job.id,
+            "name": job.name,
+            "next_run": str(job.next_run_time) if job.next_run_time else None,
+            "trigger": str(job.trigger),
+        })
+    return {"total_jobs": len(jobs), "jobs": jobs}
