@@ -26,7 +26,7 @@ from sqlalchemy import text
 from app.auth.dependencies import require_role, get_current_user
 from app.core.database import get_db
 from app.routes.defect_risk import router as defect_risk_router
-
+from app.routes.suppression_test import router as suppression_router
 router = APIRouter(prefix="/api/v1/defect-risk", tags=["defect-risk"])
 
 
@@ -122,6 +122,7 @@ app.include_router(code_quality_actions_router)
 app.include_router(dora_router)
 app.include_router(dora_kpi_router)
 app.include_router(defect_risk_router)
+app.include_router(suppression_router)
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Sentry Backend API!"}

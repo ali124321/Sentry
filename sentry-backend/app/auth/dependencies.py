@@ -7,6 +7,7 @@ from app.core.database import get_db
 
 bearer_scheme = HTTPBearer()
 
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db)
@@ -24,6 +25,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+
 def require_role(*roles: str):
     async def role_checker(current_user=Depends(get_current_user)):
         if current_user.role not in roles:
@@ -33,3 +35,19 @@ def require_role(*roles: str):
             )
         return current_user
     return role_checker
+
+
+def require_aggregate_only():
+    """
+    Dependency: blocks individual-level data for roles below leadership.
+    Use on any endpoint that could expose per-person metrics.
+    """
+    async def checker(current_user=Depends(get_current_user)):
+        if current_user.role not in ("admin", "leadership"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Individual-level data is restricted to admin and leadership. "
+                       "Aggregate views are available to your role."
+            )
+        return current_user
+    return checker
