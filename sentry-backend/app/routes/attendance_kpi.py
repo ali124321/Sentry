@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.auth.dependencies import require_role, get_current_user
 from app.core.database import get_db
+from app.core.governance import add_caveat, add_caveat_to_list
 
 router = APIRouter(prefix="/api/v1/kpi/attendance", tags=["attendance-kpi"])
 
@@ -22,7 +23,7 @@ def suppress_small_cohorts(rows: list[dict], group_key: str) -> list[dict]:
 
 @router.get("/days-present")
 async def a1_days_present(
-    month: str = None,  # e.g. "2026-01"
+    month: str = None,
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -48,14 +49,12 @@ async def a1_days_present(
         for r in result.fetchall()
     ]
 
-    # Employees can only see their own data
     if not is_admin_or_above:
         rows = [r for r in rows if r["person_id"] == str(current_user.id)]
-        return rows
+        return add_caveat_to_list(rows, "attendance")
 
-    # Suppress small cohorts for privacy
     rows = suppress_small_cohorts(rows, "month")
-    return rows
+    return add_caveat_to_list(rows, "attendance")
 
 
 # ── A2: Average Arrival Time ─────────────────────────────────────────────────
@@ -99,10 +98,10 @@ async def a2_avg_arrival(
 
     if not is_admin_or_above:
         rows = [r for r in rows if r["person_id"] == str(current_user.id)]
-        return rows
+        return add_caveat_to_list(rows, "attendance")
 
     rows = suppress_small_cohorts(rows, "month")
-    return rows
+    return add_caveat_to_list(rows, "attendance")
 
 
 # ── A3: Arrival Consistency ───────────────────────────────────────────────────
@@ -147,10 +146,10 @@ async def a3_arrival_consistency(
 
     if not is_admin_or_above:
         rows = [r for r in rows if r["person_id"] == str(current_user.id)]
-        return rows
+        return add_caveat_to_list(rows, "attendance")
 
     rows = suppress_small_cohorts(rows, "month")
-    return rows
+    return add_caveat_to_list(rows, "attendance")
 
 
 # ── A4: Office Session Hours ──────────────────────────────────────────────────
@@ -196,10 +195,10 @@ async def a4_session_hours(
 
     if not is_admin_or_above:
         rows = [r for r in rows if r["person_id"] == str(current_user.id)]
-        return rows
+        return add_caveat_to_list(rows, "attendance")
 
     rows = suppress_small_cohorts(rows, "month")
-    return rows
+    return add_caveat_to_list(rows, "attendance")
 
 
 # ── A5: Attendance Trend ──────────────────────────────────────────────────────
@@ -231,7 +230,6 @@ async def a5_attendance_trend(
     for r in rows:
         avg = float(r.avg_days_per_person)
         change = round(avg - prev_avg, 2) if prev_avg is not None else 0.0
-        # Simple change-point: flag if change > 20% of previous
         is_change_point = abs(change) > (prev_avg * 0.2) if prev_avg else False
 
         trend.append({
@@ -244,9 +242,8 @@ async def a5_attendance_trend(
         })
         prev_avg = avg
 
-    # Suppress if fewer than 5 persons in any month
     trend = [t for t in trend if t["unique_persons"] >= SUPPRESSION_THRESHOLD]
-    return trend
+    return add_caveat_to_list(trend, "attendance")
 
 
 # ── A6: Cohort Summary ────────────────────────────────────────────────────────
@@ -279,9 +276,7 @@ async def a6_cohort_summary(
     """), params)
 
     rows = result.fetchall()
-
-    # Suppress cohorts smaller than 5
-    return [
+    data = [
         {
             "month": r.month,
             "total_persons": r.total_persons,
@@ -294,3 +289,4 @@ async def a6_cohort_summary(
         for r in rows
         if r.total_persons >= SUPPRESSION_THRESHOLD
     ]
+    return add_caveat_to_list(data, "attendance")

@@ -32,7 +32,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.rate_limit import limiter
 from app.core.security import validate_secrets
-
+from app.routes.governance import router as governance_router
 router = APIRouter(prefix="/api/v1/defect-risk", tags=["defect-risk"])
 
 
@@ -137,7 +137,7 @@ app.include_router(dora_kpi_router)
 app.include_router(defect_risk_router)
 app.include_router(suppression_router)
 app.include_router(ml_framework_router)
-
+app.include_router(governance_router)
 
 @app.get("/")
 async def root():
