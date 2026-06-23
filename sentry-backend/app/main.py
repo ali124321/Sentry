@@ -33,6 +33,7 @@ from slowapi.errors import RateLimitExceeded
 from app.core.rate_limit import limiter
 from app.core.security import validate_secrets
 from app.routes.governance import router as governance_router
+from app.routes.cohort_kpi import router as cohort_kpi_router
 router = APIRouter(prefix="/api/v1/defect-risk", tags=["defect-risk"])
 
 
@@ -138,7 +139,7 @@ app.include_router(defect_risk_router)
 app.include_router(suppression_router)
 app.include_router(ml_framework_router)
 app.include_router(governance_router)
-
+app.include_router(cohort_kpi_router)
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Sentry Backend API!"}
