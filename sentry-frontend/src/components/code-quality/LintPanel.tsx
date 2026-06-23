@@ -71,7 +71,7 @@ export default function LintPanel({ repositoryId }: { repositoryId: number }) {
                 <Cell key={i} fill={SEVERITY_COLORS[entry.name] || "#6b7280"} />
               ))}
             </Pie>
-            <Tooltip formatter={(v: number) => v.toLocaleString()} />
+            <Tooltip formatter={(value: any) => (typeof value === "number" ? value.toLocaleString() : value != null ? String(value) : "")} />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11 }} />
           </PieChart>
         </ResponsiveContainer>

@@ -92,6 +92,14 @@ export default function Dashboard() {
   const [complexityFiles, setComplexityFiles] = useState<any[]>([]);
   const [churnHotspots, setChurnHotspots] = useState<any[]>([]);
   const [secretAlerts, setSecretAlerts] = useState<any[]>([]);
+
+  const [doraDeployFreq, setDoraDeployFreq] = useState<any[]>([]);
+  const [doraLeadTime, setDoraLeadTime] = useState<any>({ data: [] });
+  const [doraCFR, setDoraCFR] = useState<any[]>([]);
+  const [doraMTTR, setDoraMTTR] = useState<any>({ data: [] });
+  const [doraReviewLatency, setDoraReviewLatency] = useState<any[]>([]);
+  const [szzTraces, setSzzTraces] = useState<any[]>([]);
+  const [szzTopBugIntroducers, setSzzTopBugIntroducers] = useState<any[]>([]);
   // Security state
   const [securityMetrics, setSecurityMetrics] = useState<any>(null);
   const [securityQueue, setSecurityQueue] = useState<any[]>([]);
@@ -119,10 +127,23 @@ export default function Dashboard() {
           fetch("http://localhost:8000/api/v1/occupancy-kpi/trend?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyTrend(data.data || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/forecast?forecast_days=7", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyForecast(data.forecast || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/mobile-adoption?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setMobileAdoption(data.data || []));
-        fetch("http://localhost:8000/api/code-quality/summary?repository_id=1", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setCodeQualitySummary(data)).catch(() => setCodeQualitySummary(null));
+        console.log("Fetching code quality summary with token:", token);
+      
+        fetch("http://localhost:8000/api/code-quality/summary?repository_id=1", { headers: { Authorization: `Bearer ${token}` } })
+          .then((res) => { console.log("code-quality summary status:", res.status); return res.json(); })
+          .then((data) => { console.log("code-quality summary data:", data); setCodeQualitySummary(data); })
+          .catch((err) => { console.error("code-quality summary FAILED:", err); setCodeQualitySummary(null); });
           fetch("http://localhost:8000/api/code-quality/complexity?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setComplexityFiles(data.files || [])).catch(() => setComplexityFiles([]));
           fetch("http://localhost:8000/api/code-quality/churn?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setChurnHotspots(data.hotspots || [])).catch(() => setChurnHotspots([]));
           fetch("http://localhost:8000/api/code-quality/secrets?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSecretAlerts(data.alerts || [])).catch(() => setSecretAlerts([]));
+        fetch("http://localhost:8000/api/v1/dora-kpi/deployment-frequency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraDeployFreq(data.data || [])).catch(() => setDoraDeployFreq([]));
+          fetch("http://localhost:8000/api/v1/dora-kpi/lead-time?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraLeadTime(data)).catch(() => setDoraLeadTime({ data: [] }));
+          fetch("http://localhost:8000/api/v1/dora-kpi/change-failure-rate?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraCFR(data.data || [])).catch(() => setDoraCFR([]));
+          fetch("http://localhost:8000/api/v1/dora-kpi/time-to-restore", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraMTTR(data)).catch(() => setDoraMTTR({ data: [] }));
+          fetch("http://localhost:8000/api/v1/dora-kpi/review-latency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraReviewLatency(data.data || [])).catch(() => setDoraReviewLatency([]));
+          fetch("http://localhost:8000/api/v1/dora-kpi/szz/traces?limit=30", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSzzTraces(Array.isArray(data) ? data : [])).catch(() => setSzzTraces([]));
+          fetch("http://localhost:8000/api/v1/dora-kpi/szz/top-bug-introducers?limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSzzTopBugIntroducers(Array.isArray(data) ? data : [])).catch(() => setSzzTopBugIntroducers([]));
+        
         });
     }
   }, [token]);
@@ -283,6 +304,7 @@ export default function Dashboard() {
     { id: "ingestion", icon: "📥", label: "Data Ingestion", show: isAdmin },
     { id: "occupancy", icon: "🏢", label: "Occupancy", show: true },
     { id: "code-quality", icon: "🛠️", label: "Code Quality", show: true },
+    { id: "dora", icon: "🚀", label: "DORA Metrics", show: true },
     { id: "attendance", icon: "📅", label: "Attendance KPIs", show: true },
     { id: "identity-qa", icon: "🔎", label: "Identity QA", show: isAdmin },
     { id: "sync", icon: "🔄", label: "GitHub Sync", show: isAdmin },
@@ -559,7 +581,7 @@ export default function Dashboard() {
             )}
           </div>
         );
-        case "code-quality": {
+      case "code-quality": {
         const riskColor = (score: number) => {
           if (score >= 60) return "#f87171";
           if (score >= 30) return "#fbbf24";
@@ -671,7 +693,199 @@ export default function Dashboard() {
           </div>
         );
       }
+case "dora": {
+        const totalDeploys = doraDeployFreq.reduce((sum: number, d: any) => sum + (d.total_deployments || 0), 0);
+        const avgLead = doraLeadTime.data?.length
+          ? (doraLeadTime.data.reduce((s: number, d: any) => s + d.avg_lead_time_hours, 0) / doraLeadTime.data.length).toFixed(1)
+          : "—";
+        const avgCFR = doraCFR.length
+          ? (doraCFR.reduce((s: number, d: any) => s + (d.change_failure_rate_pct || 0), 0) / doraCFR.length).toFixed(1)
+          : "—";
+        const avgRestore = doraMTTR.data?.length
+          ? (doraMTTR.data.reduce((s: number, d: any) => s + d.avg_restore_hours, 0) / doraMTTR.data.length).toFixed(1)
+          : "—";
+        const avgReview = doraReviewLatency.length
+          ? (doraReviewLatency.reduce((s: number, d: any) => s + (d.avg_latency_hours || 0), 0) / doraReviewLatency.length).toFixed(1)
+          : "—";
 
+        return (
+          <div>
+            <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🚀 DORA Metrics</h2>
+            <p style={{ color: "#64748b", marginBottom: "32px" }}>Deployment frequency, lead time, change-failure rate, time to restore and review latency</p>
+
+            {/* F1-F5 Summary cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "16px", marginBottom: "32px" }}>
+              {[
+                { label: "F1 · Deploy Frequency", value: totalDeploys, sub: "deploys / 90d", icon: "🚀", color: "#34d399" },
+                { label: "F2 · Lead Time", value: avgLead, sub: "avg hours", icon: "⏱️", color: "#a78bfa" },
+                { label: "F3 · Change Failure", value: avgCFR === "—" ? "—" : `${avgCFR}%`, sub: "avg rate", icon: "💥", color: "#f87171" },
+                { label: "F4 · Time to Restore", value: avgRestore, sub: "avg hours", icon: "🛠️", color: "#fb923c" },
+                { label: "F5 · Review Latency", value: avgReview, sub: "avg hours", icon: "👀", color: "#60a5fa" },
+              ].map((card) => (
+                <div key={card.label} style={{
+                  backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a",
+                  borderRadius: "16px", padding: "20px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <p style={{ color: "#94a3b8", margin: 0, fontSize: "12px" }}>{card.label}</p>
+                    <span style={{ fontSize: "18px" }}>{card.icon}</span>
+                  </div>
+                  <p style={{ fontSize: "28px", fontWeight: "bold", color: card.color, margin: "8px 0 0" }}>{card.value}</p>
+                  <p style={{ color: "#64748b", margin: "4px 0 0", fontSize: "11px" }}>{card.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Deployment Frequency table */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🚀 Deployment Frequency by Environment</h3></div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                <span>Environment</span><span>Total</span><span>Avg/Day</span><span>Active Days</span>
+              </div>
+              {doraDeployFreq.length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No deployment data yet.</p>
+              ) : (
+                doraDeployFreq.map((d: any, i: number) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ fontWeight: "bold" }}>{d.environment}</span>
+                    <span style={{ color: "#34d399", fontWeight: "bold" }}>{d.total_deployments}</span>
+                    <span style={{ color: "#94a3b8" }}>{d.avg_per_day}</span>
+                    <span style={{ color: "#64748b" }}>{d.days_with_deploys}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Lead Time table */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "16px" }}>⏱️ Lead Time for Changes</h3>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>{doraLeadTime.note}</p>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                <span>Repo</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>PRs</span>
+              </div>
+              {(doraLeadTime.data || []).length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No merged PR data yet.</p>
+              ) : (
+                doraLeadTime.data.map((d: any, i: number) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ fontWeight: "bold", fontSize: "13px" }}>{d.repo}</span>
+                    <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{d.avg_lead_time_hours}</span>
+                    <span style={{ color: "#64748b" }}>{d.min_lead_time_hours}</span>
+                    <span style={{ color: "#64748b" }}>{d.max_lead_time_hours}</span>
+                    <span style={{ color: "#94a3b8" }}>{d.pr_count}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Change Failure Rate table */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>💥 Change Failure Rate</h3></div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                <span>Environment</span><span>Total</span><span>Failed</span><span>Rate</span>
+              </div>
+              {doraCFR.length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No deployment data yet.</p>
+              ) : (
+                doraCFR.map((d: any, i: number) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ fontWeight: "bold" }}>{d.environment}</span>
+                    <span style={{ color: "#94a3b8" }}>{d.total_deployments}</span>
+                    <span style={{ color: "#f87171" }}>{d.failed_deployments}</span>
+                    <span style={{ color: d.change_failure_rate_pct > 15 ? "#f87171" : "#34d399", fontWeight: "bold" }}>{d.change_failure_rate_pct}%</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Time to Restore table */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "16px" }}>🛠️ Time to Restore</h3>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>{doraMTTR.note}</p>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                <span>Environment</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>Incidents</span>
+              </div>
+              {(doraMTTR.data || []).length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No restore data yet — no failed deployments recorded.</p>
+              ) : (
+                doraMTTR.data.map((d: any, i: number) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ fontWeight: "bold" }}>{d.environment}</span>
+                    <span style={{ color: "#fb923c", fontWeight: "bold" }}>{d.avg_restore_hours}</span>
+                    <span style={{ color: "#64748b" }}>{d.min_restore_hours}</span>
+                    <span style={{ color: "#64748b" }}>{d.max_restore_hours}</span>
+                    <span style={{ color: "#94a3b8" }}>{d.incidents}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Review Latency table */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>👀 PR Review Latency</h3></div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                <span>Repo</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>Reviewed PRs</span>
+              </div>
+              {doraReviewLatency.length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No reviewed PR data yet.</p>
+              ) : (
+                doraReviewLatency.map((d: any, i: number) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ fontWeight: "bold", fontSize: "13px" }}>{d.repo}</span>
+                    <span style={{ color: "#60a5fa", fontWeight: "bold" }}>{d.avg_latency_hours}</span>
+                    <span style={{ color: "#64748b" }}>{d.min_latency_hours}</span>
+                    <span style={{ color: "#64748b" }}>{d.max_latency_hours}</span>
+                    <span style={{ color: "#94a3b8" }}>{d.reviewed_pr_count}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* F7 — Defect Origin (SZZ) view */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
+                <h3 style={{ margin: 0, fontSize: "16px" }}>🔬 Defect Origin (F7 · SZZ Tracing)</h3>
+                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>Each fix commit traced back to the commit that introduced the bug</p>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                <span>Fix SHA</span><span>Bug-Introducing SHA</span><span>File</span><span>Fix Author</span><span>Bug Author</span>
+              </div>
+              {szzTraces.length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No bug-introducing commits traced yet. SZZ only finds matches when a fix replaces pre-existing lines.</p>
+              ) : (
+                szzTraces.map((t: any, i: number) => (
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#fb923c" }}>{t.fix_sha?.slice(0, 8)}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#f87171" }}>{t.bug_introducing_sha?.slice(0, 8) || "—"}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#94a3b8" }}>{t.filename}</span>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>{t.fix_author_id || "—"}</span>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>{t.bug_author_id || "—"}</span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Top bug introducers */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>📌 Top Bug-Introducing Authors</h3></div>
+              {szzTopBugIntroducers.length === 0 ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>No data yet.</p>
+              ) : (
+                szzTopBugIntroducers.map((a: any, i: number) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                    <span style={{ color: "#94a3b8" }}>{a.author_id}</span>
+                    <span style={{ color: "#f87171", fontWeight: "bold" }}>{a.bug_count} bugs traced</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        );
+      }
 
       case "occupancy":
         return (
