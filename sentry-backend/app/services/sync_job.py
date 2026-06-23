@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import text
 from app.core.database import AsyncSessionLocal
 from app.pipeline.github_sync import sync_github
+from app.core.observability import pipeline_logger, send_alert
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
@@ -24,7 +25,7 @@ async def run_github_sync():
         return
 
     started_at = datetime.utcnow()
-    logger.info(f"[SCHEDULER] Starting GitHub sync for {repo_name}")
+    pipeline_logger.info("job_started", job="github_sync", repo=repo_name)
 
     async with AsyncSessionLocal() as db:
         await db.execute(text("""
@@ -40,7 +41,7 @@ async def run_github_sync():
                 WHERE job_name = 'github_sync' AND status = 'running'
             """))
             await db.commit()
-            logger.info("[SCHEDULER] GitHub sync complete")
+            pipeline_logger.info("job_success", job="github_sync")
         except Exception as e:
             await db.execute(text("""
                 UPDATE sync_status
@@ -48,14 +49,15 @@ async def run_github_sync():
                 WHERE job_name = 'github_sync' AND status = 'running'
             """), {"error": str(e)})
             await db.commit()
-            logger.error(f"[SCHEDULER] GitHub sync failed: {e}")
+            pipeline_logger.error("job_failed", job="github_sync", error=str(e))
+            await send_alert("github_sync", str(e))
 
 
 # ── Job 2: Access Log Refresh ────────────────────────────────────────────────
 
 async def run_occupancy_refresh():
     """Refresh occupancy materialized views after new access events."""
-    logger.info("[SCHEDULER] Refreshing occupancy views")
+    pipeline_logger.info("job_started", job="occupancy_refresh")
     async with AsyncSessionLocal() as db:
         try:
             from app.pipeline.occupancy_views import refresh_occupancy_views
@@ -65,16 +67,17 @@ async def run_occupancy_refresh():
                 VALUES (gen_random_uuid(), 'occupancy_refresh', 'success', NOW(), NOW())
             """))
             await db.commit()
-            logger.info("[SCHEDULER] Occupancy refresh complete")
+            pipeline_logger.info("job_success", job="occupancy_refresh")
         except Exception as e:
-            logger.error(f"[SCHEDULER] Occupancy refresh failed: {e}")
+            pipeline_logger.error("job_failed", job="occupancy_refresh", error=str(e))
+            await send_alert("occupancy_refresh", str(e))
 
 
 # ── Job 3: DORA Views Refresh ─────────────────────────────────────────────────
 
 async def run_dora_refresh():
     """Refresh DORA materialized views."""
-    logger.info("[SCHEDULER] Refreshing DORA views")
+    pipeline_logger.info("job_started", job="dora_refresh")
     async with AsyncSessionLocal() as db:
         try:
             from app.pipeline.dora_views import refresh_dora_views
@@ -84,16 +87,17 @@ async def run_dora_refresh():
                 VALUES (gen_random_uuid(), 'dora_refresh', 'success', NOW(), NOW())
             """))
             await db.commit()
-            logger.info("[SCHEDULER] DORA refresh complete")
+            pipeline_logger.info("job_success", job="dora_refresh")
         except Exception as e:
-            logger.error(f"[SCHEDULER] DORA refresh failed: {e}")
+            pipeline_logger.error("job_failed", job="dora_refresh", error=str(e))
+            await send_alert("dora_refresh", str(e))
 
 
 # ── Job 4: Anomaly Scoring ────────────────────────────────────────────────────
 
 async def run_anomaly_scoring():
     """Run Isolation Forest anomaly scoring job."""
-    logger.info("[SCHEDULER] Running anomaly scoring")
+    pipeline_logger.info("job_started", job="anomaly_scoring")
     async with AsyncSessionLocal() as db:
         try:
             from app.pipeline.isolation_forest_model import run_anomaly_scoring_job
@@ -105,16 +109,17 @@ async def run_anomaly_scoring():
                     (gen_random_uuid(), 'anomaly_scoring', 'success', NOW(), NOW(), :rows)
             """), {"rows": result.get("anomalies_found", 0)})
             await db.commit()
-            logger.info(f"[SCHEDULER] Anomaly scoring complete: {result}")
+            pipeline_logger.info("job_success", job="anomaly_scoring", result=str(result))
         except Exception as e:
-            logger.error(f"[SCHEDULER] Anomaly scoring failed: {e}")
+            pipeline_logger.error("job_failed", job="anomaly_scoring", error=str(e))
+            await send_alert("anomaly_scoring", str(e))
 
 
 # ── Job 5: Defect Risk Model ──────────────────────────────────────────────────
 
 async def run_defect_risk():
     """Retrain and score defect risk model."""
-    logger.info("[SCHEDULER] Running defect risk model")
+    pipeline_logger.info("job_started", job="defect_risk_model")
     async with AsyncSessionLocal() as db:
         try:
             from app.pipeline.defect_risk_model import run_defect_prediction
@@ -126,9 +131,10 @@ async def run_defect_risk():
                     (gen_random_uuid(), 'defect_risk_model', 'success', NOW(), NOW(), :rows)
             """), {"rows": result.get("files_scored", 0)})
             await db.commit()
-            logger.info(f"[SCHEDULER] Defect risk model complete: {result}")
+            pipeline_logger.info("job_success", job="defect_risk_model", result=str(result))
         except Exception as e:
-            logger.error(f"[SCHEDULER] Defect risk model failed: {e}")
+            pipeline_logger.error("job_failed", job="defect_risk_model", error=str(e))
+            await send_alert("defect_risk_model", str(e))
 
 
 # ── Job 6: SZZ Tracing ───────────────────────────────────────────────────────
@@ -140,7 +146,7 @@ async def run_szz():
         logger.warning("GITHUB_LOCAL_CLONE_PATH not set — skipping SZZ")
         return
 
-    logger.info("[SCHEDULER] Running SZZ tracing")
+    pipeline_logger.info("job_started", job="szz_tracing")
     async with AsyncSessionLocal() as db:
         try:
             from app.pipeline.szz import run_szz_tracing
@@ -152,9 +158,10 @@ async def run_szz():
                     (gen_random_uuid(), 'szz_tracing', 'success', NOW(), NOW(), :rows)
             """), {"rows": result.get("traces_found", 0)})
             await db.commit()
-            logger.info(f"[SCHEDULER] SZZ tracing complete: {result}")
+            pipeline_logger.info("job_success", job="szz_tracing", result=str(result))
         except Exception as e:
-            logger.error(f"[SCHEDULER] SZZ tracing failed: {e}")
+            pipeline_logger.error("job_failed", job="szz_tracing", error=str(e))
+            await send_alert("szz_tracing", str(e))
 
 
 # ── Scheduler Setup ───────────────────────────────────────────────────────────
@@ -162,7 +169,7 @@ async def run_szz():
 def start_scheduler():
     """
     Start the pipeline orchestration scheduler.
-    
+
     Schedule:
     - GitHub sync          → every 6 hours
     - Occupancy refresh    → every 2 hours
@@ -170,7 +177,7 @@ def start_scheduler():
     - Anomaly scoring      → daily at 2am
     - Defect risk model    → daily at 3am
     - SZZ tracing          → daily at 4am
-    
+
     All jobs are idempotent — safe to re-run if they fail.
     """
     scheduler.add_job(

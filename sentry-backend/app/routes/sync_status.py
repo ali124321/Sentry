@@ -15,7 +15,6 @@ async def get_sync_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get last sync run and GitHub rate limit budget."""
-
     result = await db.execute(text("""
         SELECT job_name, status, started_at, finished_at, rows_synced, error_message
         FROM sync_status
@@ -23,7 +22,6 @@ async def get_sync_status(
         LIMIT 5
     """))
     rows = result.fetchall()
-
     last_runs = [
         {
             "job_name": row.job_name,
@@ -73,6 +71,8 @@ async def trigger_sync(
     from app.services.sync_job import run_github_sync
     asyncio.create_task(run_github_sync())
     return {"message": "GitHub sync triggered in background"}
+
+
 @router.get("/schedule")
 async def get_schedule(
     current_user=Depends(require_role("admin")),
@@ -88,3 +88,64 @@ async def get_schedule(
             "trigger": str(job.trigger),
         })
     return {"total_jobs": len(jobs), "jobs": jobs}
+
+
+@router.get("/runs")
+async def get_pipeline_runs(
+    limit: int = 20,
+    current_user=Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get recent run history for all pipeline jobs."""
+    result = await db.execute(text("""
+        SELECT job_name, status, started_at, finished_at, rows_synced, error_message
+        FROM sync_status
+        ORDER BY started_at DESC
+        LIMIT :limit
+    """), {"limit": limit})
+    rows = result.fetchall()
+    return [
+        {
+            "job": row.job_name,
+            "status": row.status,
+            "started_at": str(row.started_at) if row.started_at else None,
+            "finished_at": str(row.finished_at) if row.finished_at else None,
+            "rows_synced": row.rows_synced,
+            "error": row.error_message if row.status == "failed" else None,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/health")
+async def pipeline_health(
+    current_user=Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pipeline health: latest run status for each job."""
+    result = await db.execute(text("""
+        SELECT DISTINCT ON (job_name)
+            job_name, status, started_at, finished_at, rows_synced, error_message
+        FROM sync_status
+        ORDER BY job_name, started_at DESC
+    """))
+    rows = result.fetchall()
+    jobs = [
+        {
+            "job": row.job_name,
+            "status": row.status,
+            "last_run": str(row.started_at) if row.started_at else None,
+            "finished_at": str(row.finished_at) if row.finished_at else None,
+            "rows_synced": row.rows_synced,
+            "error": row.error_message if row.status == "failed" else None,
+        }
+        for row in rows
+    ]
+    total = len(jobs)
+    healthy = sum(1 for j in jobs if j["status"] in ("success", "skipped_no_drift"))
+    return {
+        "healthy": healthy == total,
+        "healthy_jobs": healthy,
+        "total_jobs": total,
+        "jobs": jobs,
+    }
