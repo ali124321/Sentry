@@ -3,7 +3,7 @@ import ProtectedRoute from "@/lib/auth/ProtectedRoute";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, AreaChart, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, AreaChart, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from "recharts";
 
 function OccupancyTrendChart({ data }: { data: any[] }) {
   return (
@@ -34,6 +34,53 @@ function OccupancyForecastChart({ data }: { data: any[] }) {
         <Area type="monotone" dataKey="predicted" stroke="#a78bfa" fill="#7c3aed" fillOpacity={0.3} strokeWidth={2} name="Predicted" />
         <Area type="monotone" dataKey="lower_bound" stroke="transparent" fill="#0f0f1a" fillOpacity={1} name="Lower Bound" />
       </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function CohortScatterChart({ data }: { data: any[] }) {
+  const COHORT_COLORS: Record<string, string> = {
+    "Early & Long": "#34d399",
+    "Early & Short": "#60a5fa",
+    "Late & Long": "#f87171",
+    "Late & Short": "#fbbf24",
+    "Hybrid": "#a78bfa",
+  };
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#2a2a4a" />
+        <XAxis dataKey="avg_arrival_hour" name="Avg Arrival Hour" stroke="#64748b" fontSize={12} label={{ value: "Arrival Hour", position: "insideBottom", offset: -10, fill: "#64748b" }} domain={[6, 22]} />
+        <YAxis dataKey="avg_session_hours" name="Avg Session Hours" stroke="#64748b" fontSize={12} label={{ value: "Session Hours", angle: -90, position: "insideLeft", fill: "#64748b" }} />
+        <ZAxis range={[60, 60]} />
+        <Tooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          contentStyle={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "8px" }}
+          content={({ active, payload }) => {
+            if (active && payload && payload.length) {
+              const d = payload[0].payload;
+              return (
+                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "8px", padding: "12px" }}>
+                  <p style={{ margin: "0 0 4px", fontWeight: "bold", color: COHORT_COLORS[d.cohort] || "#a78bfa" }}>{d.cohort}</p>
+                  <p style={{ margin: "0 0 2px", color: "#94a3b8", fontSize: "13px" }}>Arrival: {d.avg_arrival_time}</p>
+                  <p style={{ margin: "0 0 2px", color: "#94a3b8", fontSize: "13px" }}>Session: {d.avg_session_hours}h</p>
+                  <p style={{ margin: 0, color: "#64748b", fontSize: "12px" }}>{d.member_count} members</p>
+                </div>
+              );
+            }
+            return null;
+          }}
+        />
+        {data.map((entry) => (
+          <Scatter
+            key={entry.cohort}
+            name={entry.cohort}
+            data={[entry]}
+            fill={COHORT_COLORS[entry.cohort] || "#a78bfa"}
+          />
+        ))}
+        <Legend />
+      </ScatterChart>
     </ResponsiveContainer>
   );
 }
@@ -83,6 +130,12 @@ export default function Dashboard() {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [attendanceMonth, setAttendanceMonth] = useState("2026-01");
 
+  // Cohort state
+  const [cohortOverview, setCohortOverview] = useState<any>(null);
+  const [cohortLoading, setCohortLoading] = useState(false);
+  const [cohortRunning, setCohortRunning] = useState(false);
+  const [cohortMessage, setCohortMessage] = useState("");
+
   const [occupancyPeak, setOccupancyPeak] = useState<any[]>([]);
   const [occupancyTrend, setOccupancyTrend] = useState<any[]>([]);
   const [occupancyForecast, setOccupancyForecast] = useState<any[]>([]);
@@ -101,7 +154,7 @@ export default function Dashboard() {
   const [szzTraces, setSzzTraces] = useState<any[]>([]);
   const [szzTopBugIntroducers, setSzzTopBugIntroducers] = useState<any[]>([]);
   const [riskWatchlist, setRiskWatchlist] = useState<any[]>([]);
-  // Security state
+
   const [securityMetrics, setSecurityMetrics] = useState<any>(null);
   const [securityQueue, setSecurityQueue] = useState<any[]>([]);
   const [queueSummary, setQueueSummary] = useState<any>({});
@@ -124,20 +177,16 @@ export default function Dashboard() {
             fetch("http://localhost:8000/api/v1/users/", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setUsers(Array.isArray(data) ? data : []));
           }
           fetchAttendance("2026-01");
+          fetchCohortOverview();
           fetch("http://localhost:8000/api/v1/occupancy-kpi/peak?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyPeak(data.data || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/trend?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyTrend(data.data || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/forecast?forecast_days=7", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyForecast(data.forecast || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/mobile-adoption?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setMobileAdoption(data.data || []));
-        console.log("Fetching code quality summary with token:", token);
-      
-        fetch("http://localhost:8000/api/code-quality/summary?repository_id=1", { headers: { Authorization: `Bearer ${token}` } })
-          .then((res) => { console.log("code-quality summary status:", res.status); return res.json(); })
-          .then((data) => { console.log("code-quality summary data:", data); setCodeQualitySummary(data); })
-          .catch((err) => { console.error("code-quality summary FAILED:", err); setCodeQualitySummary(null); });
+          fetch("http://localhost:8000/api/code-quality/summary?repository_id=1", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setCodeQualitySummary(data)).catch(() => setCodeQualitySummary(null));
           fetch("http://localhost:8000/api/code-quality/complexity?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setComplexityFiles(data.files || [])).catch(() => setComplexityFiles([]));
           fetch("http://localhost:8000/api/code-quality/churn?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setChurnHotspots(data.hotspots || [])).catch(() => setChurnHotspots([]));
           fetch("http://localhost:8000/api/code-quality/secrets?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSecretAlerts(data.alerts || [])).catch(() => setSecretAlerts([]));
-        fetch("http://localhost:8000/api/v1/dora-kpi/deployment-frequency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraDeployFreq(data.data || [])).catch(() => setDoraDeployFreq([]));
+          fetch("http://localhost:8000/api/v1/dora-kpi/deployment-frequency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraDeployFreq(data.data || [])).catch(() => setDoraDeployFreq([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/lead-time?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraLeadTime(data)).catch(() => setDoraLeadTime({ data: [] }));
           fetch("http://localhost:8000/api/v1/dora-kpi/change-failure-rate?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraCFR(data.data || [])).catch(() => setDoraCFR([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/time-to-restore", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraMTTR(data)).catch(() => setDoraMTTR({ data: [] }));
@@ -237,9 +286,41 @@ export default function Dashboard() {
         fetch(`http://localhost:8000/api/v1/kpi/attendance/trend`, { headers }).then(r => r.json()),
         fetch(`http://localhost:8000/api/v1/kpi/attendance/cohort-summary?month=${month}`, { headers }).then(r => r.json()),
       ]);
-      setAttendanceData({ daysPresent: Array.isArray(dp) ? dp : [], avgArrival: Array.isArray(aa) ? aa : [], sessionHours: Array.isArray(sh) ? sh : [], trend: Array.isArray(tr) ? tr : [], cohortSummary: Array.isArray(cs) ? cs : [] });
+      setAttendanceData({
+        daysPresent: dp.data || (Array.isArray(dp) ? dp : []),
+        avgArrival: aa.data || (Array.isArray(aa) ? aa : []),
+        sessionHours: sh.data || (Array.isArray(sh) ? sh : []),
+        trend: tr.data || (Array.isArray(tr) ? tr : []),
+        cohortSummary: cs.data || (Array.isArray(cs) ? cs : []),
+      });
     } catch (e) { console.error("Failed to fetch attendance KPIs", e); }
     finally { setAttendanceLoading(false); }
+  };
+
+  const fetchCohortOverview = async () => {
+    if (!token) return;
+    setCohortLoading(true);
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/cohorts/overview", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) { const data = await res.json(); setCohortOverview(data); }
+      else { setCohortOverview(null); }
+    } catch { setCohortOverview(null); }
+    finally { setCohortLoading(false); }
+  };
+
+  const runCohortModel = async () => {
+    setCohortRunning(true); setCohortMessage("");
+    try {
+      const res = await fetch("http://localhost:8000/api/v1/cohorts/run", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (data.status === "success") {
+        setCohortMessage(`✅ Clustered ${data.persons_clustered} people into ${data.optimal_k} cohorts`);
+        fetchCohortOverview();
+      } else {
+        setCohortMessage(`⚠️ ${data.message || "Insufficient data to cluster"}`);
+      }
+    } catch { setCohortMessage("❌ Failed to run cohort model"); }
+    finally { setCohortRunning(false); }
   };
 
   const loadSecurity = async () => {
@@ -261,31 +342,15 @@ export default function Dashboard() {
 
   const handleConfirm = async (itemId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/security/review-queue/${itemId}/confirm`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reviewer: user?.email || "admin" }),
-      });
-      if (res.ok) {
-        setSecurityQueue((prev) => prev.filter((item) => item.id !== itemId));
-        setSecurityMessage("✅ Event confirmed as security incident");
-        setQueueSummary((prev: any) => ({ ...prev, confirmed: (prev.confirmed || 0) + 1, pending: (prev.pending || 1) - 1 }));
-      }
+      const res = await fetch(`http://localhost:8000/api/v1/security/review-queue/${itemId}/confirm`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ reviewer: user?.email || "admin" }) });
+      if (res.ok) { setSecurityQueue((prev) => prev.filter((item) => item.id !== itemId)); setSecurityMessage("✅ Event confirmed as security incident"); setQueueSummary((prev: any) => ({ ...prev, confirmed: (prev.confirmed || 0) + 1, pending: (prev.pending || 1) - 1 })); }
     } catch { setSecurityMessage("❌ Failed to confirm event"); }
   };
 
   const handleDismiss = async (itemId: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/security/review-queue/${itemId}/dismiss`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reviewer: user?.email || "admin" }),
-      });
-      if (res.ok) {
-        setSecurityQueue((prev) => prev.filter((item) => item.id !== itemId));
-        setSecurityMessage("✅ Event dismissed as false positive");
-        setQueueSummary((prev: any) => ({ ...prev, dismissed: (prev.dismissed || 0) + 1, pending: (prev.pending || 1) - 1 }));
-      }
+      const res = await fetch(`http://localhost:8000/api/v1/security/review-queue/${itemId}/dismiss`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ reviewer: user?.email || "admin" }) });
+      if (res.ok) { setSecurityQueue((prev) => prev.filter((item) => item.id !== itemId)); setSecurityMessage("✅ Event dismissed as false positive"); setQueueSummary((prev: any) => ({ ...prev, dismissed: (prev.dismissed || 0) + 1, pending: (prev.pending || 1) - 1 })); }
     } catch { setSecurityMessage("❌ Failed to dismiss event"); }
   };
 
@@ -294,6 +359,14 @@ export default function Dashboard() {
       {status === "OK" ? "✅ OK" : "⚠️ WARNING"}
     </span>
   );
+
+  const COHORT_COLORS: Record<string, string> = {
+    "Early & Long": "#34d399",
+    "Early & Short": "#60a5fa",
+    "Late & Long": "#f87171",
+    "Late & Short": "#fbbf24",
+    "Hybrid": "#a78bfa",
+  };
 
   const menuItems = [
     { id: "dashboard", icon: "🏠", label: "Dashboard", show: true },
@@ -582,22 +655,15 @@ export default function Dashboard() {
             )}
           </div>
         );
-      case "code-quality": {
-        const riskColor = (score: number) => {
-          if (score >= 60) return "#f87171";
-          if (score >= 30) return "#fbbf24";
-          return "#34d399";
-        };
-        const risk = codeQualitySummary?.overall_risk_score ?? 0;
 
+      case "code-quality": {
+        const riskColor = (score: number) => { if (score >= 60) return "#f87171"; if (score >= 30) return "#fbbf24"; return "#34d399"; };
+        const risk = codeQualitySummary?.overall_risk_score ?? 0;
         return (
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🛠️ Code Quality</h2>
             <p style={{ color: "#64748b", marginBottom: "32px" }}>Complexity, churn, lint density and secret/vuln alerts</p>
-
-            {!codeQualitySummary ? (
-              <p style={{ color: "#64748b" }}>Loading code quality data...</p>
-            ) : (
+            {!codeQualitySummary ? (<p style={{ color: "#64748b" }}>Loading code quality data...</p>) : (
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: "16px", marginBottom: "24px" }}>
                   <div style={{ backgroundColor: "#1a1a2e", border: `1px solid ${riskColor(risk)}`, borderRadius: "16px", padding: "24px", textAlign: "center" as const }}>
@@ -606,12 +672,7 @@ export default function Dashboard() {
                     <p style={{ color: "#64748b", margin: "8px 0 0", fontSize: "12px" }}>out of 100</p>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
-                    {[
-                      { label: "High Complexity Files", value: codeQualitySummary.complexity?.high_complexity_files ?? 0, icon: "🧠", color: "#a78bfa" },
-                      { label: "Critical Hotspots", value: codeQualitySummary.churn?.critical_hotspots ?? 0, icon: "🔥", color: "#fb923c" },
-                      { label: "Open Lint Errors", value: codeQualitySummary.lint?.errors ?? 0, icon: "🐛", color: "#facc15" },
-                      { label: "Open Secret Alerts", value: codeQualitySummary.secrets?.open_alerts ?? 0, icon: "🔐", color: "#f87171" },
-                    ].map((card) => (
+                    {[{ label: "High Complexity Files", value: codeQualitySummary.complexity?.high_complexity_files ?? 0, icon: "🧠", color: "#a78bfa" }, { label: "Critical Hotspots", value: codeQualitySummary.churn?.critical_hotspots ?? 0, icon: "🔥", color: "#fb923c" }, { label: "Open Lint Errors", value: codeQualitySummary.lint?.errors ?? 0, icon: "🐛", color: "#facc15" }, { label: "Open Secret Alerts", value: codeQualitySummary.secrets?.open_alerts ?? 0, icon: "🔐", color: "#f87171" }].map((card) => (
                       <div key={card.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <p style={{ color: "#94a3b8", margin: 0, fontSize: "13px" }}>{card.label}</p>
@@ -622,72 +683,19 @@ export default function Dashboard() {
                     ))}
                   </div>
                 </div>
-
                 <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
-                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
-                    <h3 style={{ margin: 0, fontSize: "16px" }}>🧠 Top Complex Files</h3>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                    <span>File</span><span>Language</span><span>Complexity</span><span>LOC</span>
-                  </div>
-                  {complexityFiles.length === 0 ? (
-                    <p style={{ padding: "24px", color: "#64748b" }}>No complexity data yet. Run the scanners to populate this.</p>
-                  ) : (
-                    complexityFiles.map((f: any, i: number) => (
-                      <div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                        <span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span>
-                        <span style={{ color: "#94a3b8", fontSize: "13px" }}>{f.language || "—"}</span>
-                        <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{f.complexity_score}</span>
-                        <span style={{ color: "#64748b", fontSize: "13px" }}>{f.loc ?? "—"}</span>
-                      </div>
-                    ))
-                  )}
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🧠 Top Complex Files</h3></div>
+                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>File</span><span>Language</span><span>Complexity</span><span>LOC</span></div>
+                  {complexityFiles.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No complexity data yet.</p>) : (complexityFiles.map((f: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span><span style={{ color: "#94a3b8", fontSize: "13px" }}>{f.language || "—"}</span><span style={{ color: "#a78bfa", fontWeight: "bold" }}>{f.complexity_score}</span><span style={{ color: "#64748b", fontSize: "13px" }}>{f.loc ?? "—"}</span></div>)))}
                 </div>
-
                 <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
-                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
-                    <h3 style={{ margin: 0, fontSize: "16px" }}>🔥 Churn Hotspots</h3>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                    <span>File</span><span>Churn</span><span>Commits</span><span>Hotspot Score</span>
-                  </div>
-                  {churnHotspots.length === 0 ? (
-                    <p style={{ padding: "24px", color: "#64748b" }}>No churn data yet.</p>
-                  ) : (
-                    churnHotspots.map((f: any, i: number) => (
-                      <div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                        <span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span>
-                        <span style={{ color: "#fb923c" }}>{f.churn ?? 0}</span>
-                        <span style={{ color: "#64748b", fontSize: "13px" }}>{f.commit_count ?? 0}</span>
-                        <span style={{ color: "#fb923c", fontWeight: "bold" }}>{f.churn_complexity_score ?? "—"}</span>
-                      </div>
-                    ))
-                  )}
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🔥 Churn Hotspots</h3></div>
+                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>File</span><span>Churn</span><span>Commits</span><span>Hotspot Score</span></div>
+                  {churnHotspots.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No churn data yet.</p>) : (churnHotspots.map((f: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span><span style={{ color: "#fb923c" }}>{f.churn ?? 0}</span><span style={{ color: "#64748b", fontSize: "13px" }}>{f.commit_count ?? 0}</span><span style={{ color: "#fb923c", fontWeight: "bold" }}>{f.churn_complexity_score ?? "—"}</span></div>)))}
                 </div>
-
                 <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
-                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
-                    <h3 style={{ margin: 0, fontSize: "16px" }}>🔐 Secret / Vuln Alert Feed</h3>
-                  </div>
-                  {secretAlerts.length === 0 ? (
-                    <p style={{ padding: "24px", color: "#64748b" }}>No open secret alerts. ✅</p>
-                  ) : (
-                    secretAlerts.map((a: any, i: number) => (
-                      <div key={a.id ?? i} style={{ padding: "14px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <span style={{ backgroundColor: "#7f1d1d", color: "#f87171", fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", marginRight: "10px" }}>
-                            {a.secret_type_display || a.secret_type}
-                          </span>
-                          <span style={{ fontSize: "13px", fontFamily: "monospace", color: "#94a3b8" }}>
-                            {a.filename}{a.line_number ? `:${a.line_number}` : ""}
-                          </span>
-                        </div>
-                        <span style={{ color: "#64748b", fontSize: "12px" }}>
-                          {a.created_at ? new Date(a.created_at).toLocaleDateString() : ""}
-                        </span>
-                      </div>
-                    ))
-                  )}
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🔐 Secret / Vuln Alert Feed</h3></div>
+                  {secretAlerts.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No open secret alerts. ✅</p>) : (secretAlerts.map((a: any, i: number) => (<div key={a.id ?? i} style={{ padding: "14px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><span style={{ backgroundColor: "#7f1d1d", color: "#f87171", fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", marginRight: "10px" }}>{a.secret_type_display || a.secret_type}</span><span style={{ fontSize: "13px", fontFamily: "monospace", color: "#94a3b8" }}>{a.filename}{a.line_number ? `:${a.line_number}` : ""}</span></div><span style={{ color: "#64748b", fontSize: "12px" }}>{a.created_at ? new Date(a.created_at).toLocaleDateString() : ""}</span></div>)))}
                 </div>
                 <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginTop: "24px" }}>
                   <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
@@ -697,65 +705,27 @@ export default function Dashboard() {
                   <div style={{ display: "grid", gridTemplateColumns: "0.5fr 2.5fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
                     <span>#</span><span>File</span><span>Risk Score</span><span>Level</span><span>Churn (30d)</span><span>Authors</span>
                   </div>
-                  {riskWatchlist.length === 0 ? (
-                    <p style={{ padding: "24px", color: "#64748b" }}>No files scored yet. Run the defect-risk model after the code-quality scanners populate data.</p>
-                  ) : (
-                    riskWatchlist.map((f: any) => (
-                      <div key={f.rank} style={{ display: "grid", gridTemplateColumns: "0.5fr 2.5fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                        <span style={{ color: "#64748b", fontWeight: "bold" }}>{f.rank}</span>
-                        <span style={{ fontFamily: "monospace", fontSize: "13px" }}>{f.filename}</span>
-                        <span style={{ color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399", fontWeight: "bold" }}>{f.risk_score}</span>
-                        <span>
-                          <span style={{
-                            backgroundColor: f.risk_level === "high" ? "#7f1d1d" : f.risk_level === "medium" ? "#78350f" : "#14532d",
-                            color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399",
-                            fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase" as const,
-                          }}>{f.risk_level}</span>
-                        </span>
-                        <span style={{ color: "#94a3b8" }}>{f.churn_30d ?? "—"}</span>
-                        <span style={{ color: "#94a3b8" }}>{f.distinct_authors_30d ?? "—"}</span>
-                      </div>
-                    ))
-                  )}
+                  {riskWatchlist.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No files scored yet.</p>) : (riskWatchlist.map((f: any) => (<div key={f.rank} style={{ display: "grid", gridTemplateColumns: "0.5fr 2.5fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ color: "#64748b", fontWeight: "bold" }}>{f.rank}</span><span style={{ fontFamily: "monospace", fontSize: "13px" }}>{f.filename}</span><span style={{ color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399", fontWeight: "bold" }}>{f.risk_score}</span><span><span style={{ backgroundColor: f.risk_level === "high" ? "#7f1d1d" : f.risk_level === "medium" ? "#78350f" : "#14532d", color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399", fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase" as const }}>{f.risk_level}</span></span><span style={{ color: "#94a3b8" }}>{f.churn_30d ?? "—"}</span><span style={{ color: "#94a3b8" }}>{f.distinct_authors_30d ?? "—"}</span></div>)))}
                 </div>
               </>
             )}
           </div>
         );
       }
-case "dora": {
-        const totalDeploys = doraDeployFreq.reduce((sum: number, d: any) => sum + (d.total_deployments || 0), 0);
-        const avgLead = doraLeadTime.data?.length
-          ? (doraLeadTime.data.reduce((s: number, d: any) => s + d.avg_lead_time_hours, 0) / doraLeadTime.data.length).toFixed(1)
-          : "—";
-        const avgCFR = doraCFR.length
-          ? (doraCFR.reduce((s: number, d: any) => s + (d.change_failure_rate_pct || 0), 0) / doraCFR.length).toFixed(1)
-          : "—";
-        const avgRestore = doraMTTR.data?.length
-          ? (doraMTTR.data.reduce((s: number, d: any) => s + d.avg_restore_hours, 0) / doraMTTR.data.length).toFixed(1)
-          : "—";
-        const avgReview = doraReviewLatency.length
-          ? (doraReviewLatency.reduce((s: number, d: any) => s + (d.avg_latency_hours || 0), 0) / doraReviewLatency.length).toFixed(1)
-          : "—";
 
+      case "dora": {
+        const totalDeploys = doraDeployFreq.reduce((sum: number, d: any) => sum + (d.total_deployments || 0), 0);
+        const avgLead = doraLeadTime.data?.length ? (doraLeadTime.data.reduce((s: number, d: any) => s + d.avg_lead_time_hours, 0) / doraLeadTime.data.length).toFixed(1) : "—";
+        const avgCFR = doraCFR.length ? (doraCFR.reduce((s: number, d: any) => s + (d.change_failure_rate_pct || 0), 0) / doraCFR.length).toFixed(1) : "—";
+        const avgRestore = doraMTTR.data?.length ? (doraMTTR.data.reduce((s: number, d: any) => s + d.avg_restore_hours, 0) / doraMTTR.data.length).toFixed(1) : "—";
+        const avgReview = doraReviewLatency.length ? (doraReviewLatency.reduce((s: number, d: any) => s + (d.avg_latency_hours || 0), 0) / doraReviewLatency.length).toFixed(1) : "—";
         return (
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🚀 DORA Metrics</h2>
             <p style={{ color: "#64748b", marginBottom: "32px" }}>Deployment frequency, lead time, change-failure rate, time to restore and review latency</p>
-
-            {/* F1-F5 Summary cards */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "16px", marginBottom: "32px" }}>
-              {[
-                { label: "F1 · Deploy Frequency", value: totalDeploys, sub: "deploys / 90d", icon: "🚀", color: "#34d399" },
-                { label: "F2 · Lead Time", value: avgLead, sub: "avg hours", icon: "⏱️", color: "#a78bfa" },
-                { label: "F3 · Change Failure", value: avgCFR === "—" ? "—" : `${avgCFR}%`, sub: "avg rate", icon: "💥", color: "#f87171" },
-                { label: "F4 · Time to Restore", value: avgRestore, sub: "avg hours", icon: "🛠️", color: "#fb923c" },
-                { label: "F5 · Review Latency", value: avgReview, sub: "avg hours", icon: "👀", color: "#60a5fa" },
-              ].map((card) => (
-                <div key={card.label} style={{
-                  backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a",
-                  borderRadius: "16px", padding: "20px",
-                }}>
+              {[{ label: "F1 · Deploy Frequency", value: totalDeploys, sub: "deploys / 90d", icon: "🚀", color: "#34d399" }, { label: "F2 · Lead Time", value: avgLead, sub: "avg hours", icon: "⏱️", color: "#a78bfa" }, { label: "F3 · Change Failure", value: avgCFR === "—" ? "—" : `${avgCFR}%`, sub: "avg rate", icon: "💥", color: "#f87171" }, { label: "F4 · Time to Restore", value: avgRestore, sub: "avg hours", icon: "🛠️", color: "#fb923c" }, { label: "F5 · Review Latency", value: avgReview, sub: "avg hours", icon: "👀", color: "#60a5fa" }].map((card) => (
+                <div key={card.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <p style={{ color: "#94a3b8", margin: 0, fontSize: "12px" }}>{card.label}</p>
                     <span style={{ fontSize: "18px" }}>{card.icon}</span>
@@ -765,153 +735,39 @@ case "dora": {
                 </div>
               ))}
             </div>
-
-            {/* Deployment Frequency table */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🚀 Deployment Frequency by Environment</h3></div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                <span>Environment</span><span>Total</span><span>Avg/Day</span><span>Active Days</span>
-              </div>
-              {doraDeployFreq.length === 0 ? (
-                <p style={{ padding: "24px", color: "#64748b" }}>No deployment data yet.</p>
-              ) : (
-                doraDeployFreq.map((d: any, i: number) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontWeight: "bold" }}>{d.environment}</span>
-                    <span style={{ color: "#34d399", fontWeight: "bold" }}>{d.total_deployments}</span>
-                    <span style={{ color: "#94a3b8" }}>{d.avg_per_day}</span>
-                    <span style={{ color: "#64748b" }}>{d.days_with_deploys}</span>
-                  </div>
-                ))
-              )}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>Environment</span><span>Total</span><span>Avg/Day</span><span>Active Days</span></div>
+              {doraDeployFreq.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No deployment data yet.</p>) : (doraDeployFreq.map((d: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold" }}>{d.environment}</span><span style={{ color: "#34d399", fontWeight: "bold" }}>{d.total_deployments}</span><span style={{ color: "#94a3b8" }}>{d.avg_per_day}</span><span style={{ color: "#64748b" }}>{d.days_with_deploys}</span></div>)))}
             </div>
-
-            {/* Lead Time table */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
-              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
-                <h3 style={{ margin: 0, fontSize: "16px" }}>⏱️ Lead Time for Changes</h3>
-                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>{doraLeadTime.note}</p>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                <span>Repo</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>PRs</span>
-              </div>
-              {(doraLeadTime.data || []).length === 0 ? (
-                <p style={{ padding: "24px", color: "#64748b" }}>No merged PR data yet.</p>
-              ) : (
-                doraLeadTime.data.map((d: any, i: number) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontWeight: "bold", fontSize: "13px" }}>{d.repo}</span>
-                    <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{d.avg_lead_time_hours}</span>
-                    <span style={{ color: "#64748b" }}>{d.min_lead_time_hours}</span>
-                    <span style={{ color: "#64748b" }}>{d.max_lead_time_hours}</span>
-                    <span style={{ color: "#94a3b8" }}>{d.pr_count}</span>
-                  </div>
-                ))
-              )}
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>⏱️ Lead Time for Changes</h3><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>{doraLeadTime.note}</p></div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>Repo</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>PRs</span></div>
+              {(doraLeadTime.data || []).length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No merged PR data yet.</p>) : (doraLeadTime.data.map((d: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold", fontSize: "13px" }}>{d.repo}</span><span style={{ color: "#a78bfa", fontWeight: "bold" }}>{d.avg_lead_time_hours}</span><span style={{ color: "#64748b" }}>{d.min_lead_time_hours}</span><span style={{ color: "#64748b" }}>{d.max_lead_time_hours}</span><span style={{ color: "#94a3b8" }}>{d.pr_count}</span></div>)))}
             </div>
-
-            {/* Change Failure Rate table */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>💥 Change Failure Rate</h3></div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                <span>Environment</span><span>Total</span><span>Failed</span><span>Rate</span>
-              </div>
-              {doraCFR.length === 0 ? (
-                <p style={{ padding: "24px", color: "#64748b" }}>No deployment data yet.</p>
-              ) : (
-                doraCFR.map((d: any, i: number) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontWeight: "bold" }}>{d.environment}</span>
-                    <span style={{ color: "#94a3b8" }}>{d.total_deployments}</span>
-                    <span style={{ color: "#f87171" }}>{d.failed_deployments}</span>
-                    <span style={{ color: d.change_failure_rate_pct > 15 ? "#f87171" : "#34d399", fontWeight: "bold" }}>{d.change_failure_rate_pct}%</span>
-                  </div>
-                ))
-              )}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>Environment</span><span>Total</span><span>Failed</span><span>Rate</span></div>
+              {doraCFR.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No deployment data yet.</p>) : (doraCFR.map((d: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold" }}>{d.environment}</span><span style={{ color: "#94a3b8" }}>{d.total_deployments}</span><span style={{ color: "#f87171" }}>{d.failed_deployments}</span><span style={{ color: d.change_failure_rate_pct > 15 ? "#f87171" : "#34d399", fontWeight: "bold" }}>{d.change_failure_rate_pct}%</span></div>)))}
             </div>
-
-            {/* Time to Restore table */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
-              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
-                <h3 style={{ margin: 0, fontSize: "16px" }}>🛠️ Time to Restore</h3>
-                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>{doraMTTR.note}</p>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                <span>Environment</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>Incidents</span>
-              </div>
-              {(doraMTTR.data || []).length === 0 ? (
-                <p style={{ padding: "24px", color: "#64748b" }}>No restore data yet — no failed deployments recorded.</p>
-              ) : (
-                doraMTTR.data.map((d: any, i: number) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontWeight: "bold" }}>{d.environment}</span>
-                    <span style={{ color: "#fb923c", fontWeight: "bold" }}>{d.avg_restore_hours}</span>
-                    <span style={{ color: "#64748b" }}>{d.min_restore_hours}</span>
-                    <span style={{ color: "#64748b" }}>{d.max_restore_hours}</span>
-                    <span style={{ color: "#94a3b8" }}>{d.incidents}</span>
-                  </div>
-                ))
-              )}
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🛠️ Time to Restore</h3><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>{doraMTTR.note}</p></div>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>Environment</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>Incidents</span></div>
+              {(doraMTTR.data || []).length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No restore data yet.</p>) : (doraMTTR.data.map((d: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold" }}>{d.environment}</span><span style={{ color: "#fb923c", fontWeight: "bold" }}>{d.avg_restore_hours}</span><span style={{ color: "#64748b" }}>{d.min_restore_hours}</span><span style={{ color: "#64748b" }}>{d.max_restore_hours}</span><span style={{ color: "#94a3b8" }}>{d.incidents}</span></div>)))}
             </div>
-
-            {/* Review Latency table */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>👀 PR Review Latency</h3></div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                <span>Repo</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>Reviewed PRs</span>
-              </div>
-              {doraReviewLatency.length === 0 ? (
-                <p style={{ padding: "24px", color: "#64748b" }}>No reviewed PR data yet.</p>
-              ) : (
-                doraReviewLatency.map((d: any, i: number) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontWeight: "bold", fontSize: "13px" }}>{d.repo}</span>
-                    <span style={{ color: "#60a5fa", fontWeight: "bold" }}>{d.avg_latency_hours}</span>
-                    <span style={{ color: "#64748b" }}>{d.min_latency_hours}</span>
-                    <span style={{ color: "#64748b" }}>{d.max_latency_hours}</span>
-                    <span style={{ color: "#94a3b8" }}>{d.reviewed_pr_count}</span>
-                  </div>
-                ))
-              )}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>Repo</span><span>Avg (h)</span><span>Min (h)</span><span>Max (h)</span><span>Reviewed PRs</span></div>
+              {doraReviewLatency.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No reviewed PR data yet.</p>) : (doraReviewLatency.map((d: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold", fontSize: "13px" }}>{d.repo}</span><span style={{ color: "#60a5fa", fontWeight: "bold" }}>{d.avg_latency_hours}</span><span style={{ color: "#64748b" }}>{d.min_latency_hours}</span><span style={{ color: "#64748b" }}>{d.max_latency_hours}</span><span style={{ color: "#94a3b8" }}>{d.reviewed_pr_count}</span></div>)))}
             </div>
-
-            {/* F7 — Defect Origin (SZZ) view */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
-              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
-                <h3 style={{ margin: 0, fontSize: "16px" }}>🔬 Defect Origin (F7 · SZZ Tracing)</h3>
-                <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>Each fix commit traced back to the commit that introduced the bug</p>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                <span>Fix SHA</span><span>Bug-Introducing SHA</span><span>File</span><span>Fix Author</span><span>Bug Author</span>
-              </div>
-              {szzTraces.length === 0 ? (
-                <p style={{ padding: "24px", color: "#64748b" }}>No bug-introducing commits traced yet. SZZ only finds matches when a fix replaces pre-existing lines.</p>
-              ) : (
-                szzTraces.map((t: any, i: number) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#fb923c" }}>{t.fix_sha?.slice(0, 8)}</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#f87171" }}>{t.bug_introducing_sha?.slice(0, 8) || "—"}</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "12px", color: "#94a3b8" }}>{t.filename}</span>
-                    <span style={{ fontSize: "12px", color: "#64748b" }}>{t.fix_author_id || "—"}</span>
-                    <span style={{ fontSize: "12px", color: "#64748b" }}>{t.bug_author_id || "—"}</span>
-                  </div>
-                ))
-              )}
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🔬 Defect Origin (F7 · SZZ Tracing)</h3><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>Each fix commit traced back to the commit that introduced the bug</p></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>Fix SHA</span><span>Bug-Introducing SHA</span><span>File</span><span>Fix Author</span><span>Bug Author</span></div>
+              {szzTraces.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No bug-introducing commits traced yet.</p>) : (szzTraces.map((t: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 2fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontFamily: "monospace", fontSize: "12px", color: "#fb923c" }}>{t.fix_sha?.slice(0, 8)}</span><span style={{ fontFamily: "monospace", fontSize: "12px", color: "#f87171" }}>{t.bug_introducing_sha?.slice(0, 8) || "—"}</span><span style={{ fontFamily: "monospace", fontSize: "12px", color: "#94a3b8" }}>{t.filename}</span><span style={{ fontSize: "12px", color: "#64748b" }}>{t.fix_author_id || "—"}</span><span style={{ fontSize: "12px", color: "#64748b" }}>{t.bug_author_id || "—"}</span></div>)))}
             </div>
-
-            {/* Top bug introducers */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>📌 Top Bug-Introducing Authors</h3></div>
-              {szzTopBugIntroducers.length === 0 ? (
-                <p style={{ padding: "24px", color: "#64748b" }}>No data yet.</p>
-              ) : (
-                szzTopBugIntroducers.map((a: any, i: number) => (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ color: "#94a3b8" }}>{a.author_id}</span>
-                    <span style={{ color: "#f87171", fontWeight: "bold" }}>{a.bug_count} bugs traced</span>
-                  </div>
-                ))
-              )}
+              {szzTopBugIntroducers.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No data yet.</p>) : (szzTopBugIntroducers.map((a: any, i: number) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ color: "#94a3b8" }}>{a.author_id}</span><span style={{ color: "#f87171", fontWeight: "bold" }}>{a.bug_count} bugs traced</span></div>)))}
             </div>
           </div>
         );
@@ -938,7 +794,7 @@ case "dora": {
             </div>
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "32px" }}>
               <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px", marginTop: 0 }}>📈 Daily Occupancy Trend</h3>
-              {occupancyTrend.length === 0 ? (<p style={{ color: "#64748b" }}>No trend data available.</p>) : (<div style={{ overflowX: "auto" }}><OccupancyTrendChart data={occupancyTrend} /></div>)}
+              {occupancyTrend.length === 0 ? (<p style={{ color: "#64748b" }}>No trend data available.</p>) : (<OccupancyTrendChart data={occupancyTrend} />)}
             </div>
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "28px", marginBottom: "32px" }}>
               <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "8px", marginTop: 0 }}>🔮 7-Day Occupancy Forecast</h3>
@@ -971,7 +827,6 @@ case "dora": {
           </div>
         );
 
-
       case "attendance":
         return (
           <div>
@@ -982,6 +837,7 @@ case "dora": {
               <input type="month" value={attendanceMonth} onChange={(e) => { setAttendanceMonth(e.target.value); fetchAttendance(e.target.value); }} style={{ padding: "8px 12px", backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "8px", color: "#fff", fontSize: "14px" }} />
               {attendanceLoading && <span style={{ color: "#64748b", fontSize: "13px" }}>Loading...</span>}
             </div>
+
             {attendanceData.cohortSummary.length > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "28px" }}>
                 {[{ label: "Total Persons", value: attendanceData.cohortSummary[0]?.total_persons, icon: "👥", color: "#a78bfa" }, { label: "Avg Days Present", value: attendanceData.cohortSummary[0]?.avg_days, icon: "📅", color: "#34d399" }, { label: "Max Days", value: attendanceData.cohortSummary[0]?.max_days, icon: "⬆️", color: "#60a5fa" }, { label: "Min Days", value: attendanceData.cohortSummary[0]?.min_days, icon: "⬇️", color: "#f87171" }].map((card) => (
@@ -997,51 +853,112 @@ case "dora": {
             ) : (
               <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", marginBottom: "28px", color: "#64748b", fontSize: "14px" }}>⚠️ Cohort data suppressed — fewer than 5 persons in this period.</div>
             )}
-            {[
-              { title: "A1 · Days Present", sub: "Days each person was present in the office", data: attendanceData.daysPresent, cols: ["1fr 1fr 1fr"], headers: ["Person", "Month", "Days Present"], empty: "No data — cohort suppressed or no records.", row: (r: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold" }}>{r.person_id}</span><span style={{ color: "#94a3b8" }}>{r.month}</span><span style={{ color: "#34d399", fontWeight: "bold", fontSize: "18px" }}>{r.days_present}</span></div>) },
-            ].map((section) => (
+
+            {/* ── C5 Behavioural Cohort Section ── */}
+            <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>🧬 C5 · Behavioural Cohorts</h3>
+                  <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>K-means clustering on arrival time + session length · Descriptive only — not a ranking</p>
+                </div>
+                {isAdmin && (
+                  <button onClick={runCohortModel} disabled={cohortRunning} style={{ padding: "8px 18px", backgroundColor: cohortRunning ? "#374151" : "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", cursor: cohortRunning ? "not-allowed" : "pointer", fontWeight: "bold", fontSize: "13px", opacity: cohortRunning ? 0.6 : 1 }}>
+                    {cohortRunning ? "⏳ Running..." : "▶ Run Model"}
+                  </button>
+                )}
+              </div>
+
+              {cohortMessage && (
+                <div style={{ padding: "12px 24px", backgroundColor: cohortMessage.startsWith("✅") ? "#14532d" : cohortMessage.startsWith("⚠️") ? "#78350f" : "#7f1d1d", borderBottom: "1px solid #2a2a4a", color: cohortMessage.startsWith("✅") ? "#34d399" : cohortMessage.startsWith("⚠️") ? "#fbbf24" : "#f87171", fontSize: "13px" }}>
+                  {cohortMessage}
+                </div>
+              )}
+
+              {cohortLoading ? (
+                <p style={{ padding: "24px", color: "#64748b" }}>Loading cohort data...</p>
+              ) : cohortOverview && cohortOverview.cohorts?.length > 0 ? (
+                <>
+                  {/* Scatter chart */}
+                  <div style={{ padding: "24px", borderBottom: "1px solid #2a2a4a" }}>
+                    <p style={{ color: "#64748b", fontSize: "12px", margin: "0 0 16px" }}>X axis = avg arrival hour · Y axis = avg session hours · Each dot = one cohort centroid</p>
+                    <CohortScatterChart data={cohortOverview.cohorts.map((c: any) => ({ ...c, avg_arrival_hour: c.centroid_arrival_hour, avg_session_hours: c.centroid_session_hours, avg_arrival_time: c.centroid_arrival_time }))} />
+                  </div>
+
+                  {/* Cohort summary cards */}
+                  <div style={{ display: "grid", gridTemplateColumns: `repeat(${cohortOverview.cohorts.length}, 1fr)`, gap: "0", borderBottom: "1px solid #2a2a4a" }}>
+                    {cohortOverview.cohorts.map((c: any) => (
+                      <div key={c.cohort} style={{ padding: "20px 24px", borderRight: "1px solid #2a2a4a" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                          <div style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: COHORT_COLORS[c.cohort] || "#a78bfa", flexShrink: 0 }} />
+                          <span style={{ fontWeight: "bold", fontSize: "13px", color: COHORT_COLORS[c.cohort] || "#a78bfa" }}>{c.cohort}</span>
+                        </div>
+                        <p style={{ color: "#94a3b8", margin: "0 0 4px", fontSize: "12px" }}>{c.member_count} members</p>
+                        <p style={{ color: "#64748b", margin: "0 0 2px", fontSize: "12px" }}>Arrives ~{c.centroid_arrival_time}</p>
+                        <p style={{ color: "#64748b", margin: 0, fontSize: "12px" }}>Session ~{c.centroid_session_hours}h</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Cohort table */}
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
+                    <span>Cohort</span><span>Members</span><span>Arrival</span><span>Session</span><span>Avg Days</span>
+                  </div>
+                  {cohortOverview.cohorts.map((c: any) => (
+                    <div key={c.cohort} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: COHORT_COLORS[c.cohort] || "#a78bfa" }} />
+                        <span style={{ fontWeight: "bold", color: COHORT_COLORS[c.cohort] || "#a78bfa" }}>{c.cohort}</span>
+                      </div>
+                      <span style={{ color: "#94a3b8" }}>{c.member_count}</span>
+                      <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{c.centroid_arrival_time}</span>
+                      <span style={{ color: "#60a5fa" }}>{c.centroid_session_hours}h</span>
+                      <span style={{ color: "#64748b" }}>{c.avg_days_present}</span>
+                    </div>
+                  ))}
+                  <div style={{ padding: "12px 24px", backgroundColor: "#0f0f1a" }}>
+                    <span style={{ color: "#475569", fontSize: "12px" }}>⚠️ Cohorts are descriptive behavioural patterns only — not performance indicators. Last scored: {cohortOverview.cohorts[0]?.last_scored ? new Date(cohortOverview.cohorts[0].last_scored).toLocaleString() : "—"}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ padding: "32px 24px", textAlign: "center" as const, color: "#64748b" }}>
+                  <p style={{ fontSize: "32px", margin: "0 0 8px" }}>🧬</p>
+                  <p style={{ margin: "0 0 4px", fontWeight: "bold" }}>No cohort data yet</p>
+                  <p style={{ margin: 0, fontSize: "13px" }}>Need at least 10 people with 5+ days of attendance data. {isAdmin && "Click \"Run Model\" to attempt clustering."}</p>
+                </div>
+              )}
+            </div>
+
+            {/* A1 */}
+            {[{ title: "A1 · Days Present", sub: "Days each person was present in the office", data: attendanceData.daysPresent, cols: "1fr 1fr 1fr", headers: ["Person", "Month", "Days Present"], row: (r: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold" }}>{r.person_id}</span><span style={{ color: "#94a3b8" }}>{r.month}</span><span style={{ color: "#34d399", fontWeight: "bold", fontSize: "18px" }}>{r.days_present}</span></div>) }].map((section) => (
               <div key={section.title} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
                 <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>{section.title}</h3><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>{section.sub}</p></div>
-                {section.data.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>{section.empty}</p>) : (<>{section.data.map(section.row)}</>)}
+                {section.data.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>No data — cohort suppressed or no records.</p>) : (<>{section.data.map(section.row)}</>)}
               </div>
             ))}
+
+            {/* A2 */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A2 · Average Arrival Time</h3><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>Average first-entry time per person · Caveat: based on badge swipe only</p></div>
-              {attendanceData.avgArrival.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>No data available.</p>) : (
-                attendanceData.avgArrival.map((r, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontWeight: "bold" }}>{r.person_id}</span><span style={{ color: "#94a3b8" }}>{r.month}</span><span style={{ color: "#a78bfa", fontWeight: "bold" }}>{r.avg_arrival_time}</span><span style={{ color: "#64748b" }}>{r.days_counted} day{r.days_counted > 1 ? "s" : ""}</span>
-                  </div>
-                ))
-              )}
+              {attendanceData.avgArrival.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>No data available.</p>) : (attendanceData.avgArrival.map((r, i) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold" }}>{r.person_id}</span><span style={{ color: "#94a3b8" }}>{r.month}</span><span style={{ color: "#a78bfa", fontWeight: "bold" }}>{r.avg_arrival_time}</span><span style={{ color: "#64748b" }}>{r.days_counted} day{r.days_counted > 1 ? "s" : ""}</span></div>)))}
             </div>
+
+            {/* A4 */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A4 · Office Session Hours</h3><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>Total and average hours in office · Caveat: requires both entry and exit swipe</p></div>
-              {attendanceData.sessionHours.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>⚠️ No session data — missing exit swipes or cohort suppressed (&lt;5 persons).</p>) : (
-                attendanceData.sessionHours.map((r, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontWeight: "bold" }}>{r.person_id}</span><span style={{ color: "#94a3b8" }}>{r.month}</span><span style={{ color: "#60a5fa", fontWeight: "bold" }}>{r.total_hours}h</span><span style={{ color: "#94a3b8" }}>{r.avg_hours_per_day}h</span>
-                  </div>
-                ))
-              )}
+              {attendanceData.sessionHours.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>⚠️ No session data — missing exit swipes or cohort suppressed.</p>) : (attendanceData.sessionHours.map((r, i) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontWeight: "bold" }}>{r.person_id}</span><span style={{ color: "#94a3b8" }}>{r.month}</span><span style={{ color: "#60a5fa", fontWeight: "bold" }}>{r.total_hours}h</span><span style={{ color: "#94a3b8" }}>{r.avg_hours_per_day}h</span></div>)))}
             </div>
+
+            {/* A5 */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px", fontWeight: "bold" }}>A5 · Attendance Trend</h3><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "13px" }}>Monthly trend · 🔺 marks change-points (&gt;20% shift)</p></div>
-              {attendanceData.trend.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>No trend data available.</p>) : (
-                attendanceData.trend.map((r, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center", backgroundColor: r.is_change_point ? "rgba(251,191,36,0.05)" : "transparent" }}>
-                    <span style={{ fontWeight: "bold" }}>{r.is_change_point && <span style={{ color: "#fbbf24", marginRight: "6px" }}>🔺</span>}{r.month}</span>
-                    <span style={{ color: "#94a3b8" }}>{r.unique_persons}</span><span style={{ color: "#94a3b8" }}>{r.total_days}</span>
-                    <span style={{ color: "#a78bfa", fontWeight: "bold" }}>{r.avg_days_per_person}</span>
-                    <span style={{ color: r.change_from_prev > 0 ? "#34d399" : r.change_from_prev < 0 ? "#f87171" : "#64748b", fontWeight: "bold" }}>{r.change_from_prev > 0 ? "+" : ""}{r.change_from_prev}</span>
-                  </div>
-                ))
-              )}
+              {attendanceData.trend.length === 0 ? (<p style={{ padding: "20px 24px", color: "#64748b" }}>No trend data available.</p>) : (attendanceData.trend.map((r, i) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center", backgroundColor: r.is_change_point ? "rgba(251,191,36,0.05)" : "transparent" }}><span style={{ fontWeight: "bold" }}>{r.is_change_point && <span style={{ color: "#fbbf24", marginRight: "6px" }}>🔺</span>}{r.month}</span><span style={{ color: "#94a3b8" }}>{r.unique_persons}</span><span style={{ color: "#94a3b8" }}>{r.total_days}</span><span style={{ color: "#a78bfa", fontWeight: "bold" }}>{r.avg_days_per_person}</span><span style={{ color: r.change_from_prev > 0 ? "#34d399" : r.change_from_prev < 0 ? "#f87171" : "#64748b", fontWeight: "bold" }}>{r.change_from_prev > 0 ? "+" : ""}{r.change_from_prev}</span></div>)))}
             </div>
+
+            {/* Caveats */}
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px 24px" }}>
               <h3 style={{ margin: "0 0 12px", fontSize: "14px", color: "#94a3b8" }}>📌 Data Caveats</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {["A1-A6 metrics are based on badge access swipe data only", "Session hours (A4) require both entry and exit swipes — missing exit = no session recorded", "Arrival consistency (A3) requires at least 3 days of data per person", "Groups with fewer than 5 persons are suppressed to protect privacy", "Timestamps are in Asia/Kolkata (IST) timezone", "Double-tap swipes within 5 seconds are deduplicated automatically"].map((caveat, i) => (
+                {["A1-A6 metrics are based on badge access swipe data only", "Session hours (A4) require both entry and exit swipes — missing exit = no session recorded", "Arrival consistency (A3) requires at least 3 days of data per person", "Groups with fewer than 5 persons are suppressed to protect privacy", "C5 cohorts are descriptive patterns only — never use as performance indicators", "Timestamps are in Asia/Kolkata (IST) timezone", "Double-tap swipes within 5 seconds are deduplicated automatically"].map((caveat, i) => (
                   <div key={i} style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}>
                     <span style={{ color: "#fbbf24", fontSize: "12px", marginTop: "2px" }}>⚠️</span>
                     <span style={{ color: "#64748b", fontSize: "13px" }}>{caveat}</span>
@@ -1057,9 +974,7 @@ case "dora": {
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🔎 Identity QA</h2>
             <p style={{ color: "#64748b", marginBottom: "24px" }}>Review and clean identity issues before trusting any KPI</p>
-            <button onClick={loadQA} disabled={qaLoading} style={{ padding: "10px 24px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", cursor: qaLoading ? "not-allowed" : "pointer", fontWeight: "bold", fontSize: "14px", marginBottom: "24px", opacity: qaLoading ? 0.6 : 1 }}>
-              {qaLoading ? "⏳ Loading..." : "🔄 Run QA Checks"}
-            </button>
+            <button onClick={loadQA} disabled={qaLoading} style={{ padding: "10px 24px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", cursor: qaLoading ? "not-allowed" : "pointer", fontWeight: "bold", fontSize: "14px", marginBottom: "24px", opacity: qaLoading ? 0.6 : 1 }}>{qaLoading ? "⏳ Loading..." : "🔄 Run QA Checks"}</button>
             {qaError && (<div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: "#7f1d1d", border: "1px solid #dc2626", color: "#f87171" }}>{qaError}</div>)}
             {qaMessage && (<div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: "#14532d", border: "1px solid #16a34a", color: "#34d399" }}>{qaMessage}</div>)}
             {qa && qa.checks && (
@@ -1081,27 +996,11 @@ case "dora": {
                 </div>
                 <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
                   <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px", color: "#94a3b8" }}>👥 Duplicate Identity Clusters</h3></div>
-                  {qa.checks.duplicate_clusters.clusters.length === 0 ? (<div style={{ padding: "40px", textAlign: "center" as const, color: "#475569" }}><p style={{ fontSize: "32px", margin: "0 0 8px" }}>✅</p><p style={{ margin: 0 }}>No duplicate identities found</p></div>) : (
-                    <>{qa.checks.duplicate_clusters.clusters.map((cluster) => (
-                      <div key={cluster.email} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 2fr 1fr", padding: "16px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>{cluster.email}</span>
-                        <span style={{ color: "#f87171", fontWeight: "bold" }}>{cluster.id_count}</span>
-                        <div style={{ display: "flex", flexDirection: "column" as const, gap: "4px" }}>{cluster.person_ids.map((id, i) => (<span key={id} style={{ fontSize: "11px", color: i === 0 ? "#34d399" : "#f87171" }}>{i === 0 ? "✅ Primary: " : "❌ Duplicate: "}{id.slice(0, 8)}...</span>))}</div>
-                        <button onClick={() => handleMerge(cluster.person_ids[0], cluster.person_ids[1])} disabled={merging === cluster.person_ids[1]} style={{ padding: "6px 14px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold", opacity: merging === cluster.person_ids[1] ? 0.5 : 1 }}>{merging === cluster.person_ids[1] ? "Merging..." : "🔗 Merge"}</button>
-                      </div>
-                    ))}</>
-                  )}
+                  {qa.checks.duplicate_clusters.clusters.length === 0 ? (<div style={{ padding: "40px", textAlign: "center" as const, color: "#475569" }}><p style={{ fontSize: "32px", margin: "0 0 8px" }}>✅</p><p style={{ margin: 0 }}>No duplicate identities found</p></div>) : (<>{qa.checks.duplicate_clusters.clusters.map((cluster) => (<div key={cluster.email} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 2fr 1fr", padding: "16px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ color: "#94a3b8", fontSize: "14px" }}>{cluster.email}</span><span style={{ color: "#f87171", fontWeight: "bold" }}>{cluster.id_count}</span><div style={{ display: "flex", flexDirection: "column" as const, gap: "4px" }}>{cluster.person_ids.map((id, i) => (<span key={id} style={{ fontSize: "11px", color: i === 0 ? "#34d399" : "#f87171" }}>{i === 0 ? "✅ Primary: " : "❌ Duplicate: "}{id.slice(0, 8)}...</span>))}</div><button onClick={() => handleMerge(cluster.person_ids[0], cluster.person_ids[1])} disabled={merging === cluster.person_ids[1]} style={{ padding: "6px 14px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold", opacity: merging === cluster.person_ids[1] ? 0.5 : 1 }}>{merging === cluster.person_ids[1] ? "Merging..." : "🔗 Merge"}</button></div>))}</>)}
                 </div>
                 <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
                   <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px", color: "#94a3b8" }}>🚪 Unmatched Sessions</h3></div>
-                  {qa.checks.unmatched_sessions.unmatched_person_ids.length === 0 ? (<div style={{ padding: "40px", textAlign: "center" as const, color: "#475569" }}><p style={{ fontSize: "32px", margin: "0 0 8px" }}>✅</p><p style={{ margin: 0 }}>No unmatched sessions found</p></div>) : (
-                    qa.checks.unmatched_sessions.unmatched_person_ids.map((id) => (
-                      <div key={id} style={{ padding: "14px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ color: "#94a3b8", fontSize: "14px" }}>🚪 {id}</span>
-                        <span style={{ padding: "3px 12px", borderRadius: "20px", fontSize: "12px", backgroundColor: "#7f1d1d", color: "#f87171", border: "1px solid #dc2626" }}>No matching EXIT</span>
-                      </div>
-                    ))
-                  )}
+                  {qa.checks.unmatched_sessions.unmatched_person_ids.length === 0 ? (<div style={{ padding: "40px", textAlign: "center" as const, color: "#475569" }}><p style={{ fontSize: "32px", margin: "0 0 8px" }}>✅</p><p style={{ margin: 0 }}>No unmatched sessions found</p></div>) : (qa.checks.unmatched_sessions.unmatched_person_ids.map((id) => (<div key={id} style={{ padding: "14px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ color: "#94a3b8", fontSize: "14px" }}>🚪 {id}</span><span style={{ padding: "3px 12px", borderRadius: "20px", fontSize: "12px", backgroundColor: "#7f1d1d", color: "#f87171", border: "1px solid #dc2626" }}>No matching EXIT</span></div>)))}
                 </div>
               </>
             )}
@@ -1118,13 +1017,7 @@ case "dora": {
               <h3 style={{ fontSize: "18px", fontWeight: "bold", marginBottom: "20px", marginTop: 0 }}>🔗 Connection State</h3>
               {syncLoading ? (<p style={{ color: "#64748b" }}>Loading...</p>) : syncStatus?.rate_limit ? (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
-                  {syncStatus.rate_limit.error ? (<div style={{ gridColumn: "1 / -1", padding: "16px", backgroundColor: "#7f1d1d", borderRadius: "10px", color: "#f87171" }}>❌ {syncStatus.rate_limit.error}</div>) : (
-                    <>
-                      <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #16a34a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}><p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Status</p><p style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399", margin: 0 }}>● Connected</p></div>
-                      <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}><p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Rate Limit Remaining</p><p style={{ fontSize: "32px", fontWeight: "bold", color: "#a78bfa", margin: 0 }}>{syncStatus.rate_limit.remaining ?? "—"}</p><p style={{ color: "#64748b", fontSize: "12px", margin: "4px 0 0" }}>of {syncStatus.rate_limit.limit ?? "—"}</p></div>
-                      <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}><p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Next Sync</p><p style={{ fontSize: "16px", fontWeight: "bold", color: "#60a5fa", margin: 0 }}>{syncStatus.next_scheduled}</p></div>
-                    </>
-                  )}
+                  {syncStatus.rate_limit.error ? (<div style={{ gridColumn: "1 / -1", padding: "16px", backgroundColor: "#7f1d1d", borderRadius: "10px", color: "#f87171" }}>❌ {syncStatus.rate_limit.error}</div>) : (<><div style={{ backgroundColor: "#0f0f1a", border: "1px solid #16a34a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}><p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Status</p><p style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399", margin: 0 }}>● Connected</p></div><div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}><p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Rate Limit Remaining</p><p style={{ fontSize: "32px", fontWeight: "bold", color: "#a78bfa", margin: 0 }}>{syncStatus.rate_limit.remaining ?? "—"}</p><p style={{ color: "#64748b", fontSize: "12px", margin: "4px 0 0" }}>of {syncStatus.rate_limit.limit ?? "—"}</p></div><div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px", textAlign: "center" as const }}><p style={{ color: "#64748b", margin: "0 0 8px", fontSize: "13px" }}>Next Sync</p><p style={{ fontSize: "16px", fontWeight: "bold", color: "#60a5fa", margin: 0 }}>{syncStatus.next_scheduled}</p></div></>)}
                 </div>
               ) : (<p style={{ color: "#64748b" }}>Click "Refresh Status" to load connection info.</p>)}
             </div>
@@ -1139,16 +1032,7 @@ case "dora": {
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
               <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "18px", fontWeight: "bold" }}>🕐 Last Sync Runs</h3></div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>Job</span><span>Status</span><span>Started</span><span>Finished</span></div>
-              {!syncStatus?.last_runs || syncStatus.last_runs.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No sync runs yet. Click "Refresh Status" then trigger one above!</p>) : (
-                syncStatus.last_runs.map((run: any, i: number) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ fontSize: "14px" }}>{run.job_name}</span>
-                    <span style={{ color: run.status === "success" ? "#34d399" : run.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: "bold", fontSize: "13px" }}>{run.status === "success" ? "✅ Success" : run.status === "failed" ? "❌ Failed" : "⏳ Running"}</span>
-                    <span style={{ color: "#64748b", fontSize: "13px" }}>{run.started_at ?? "—"}</span>
-                    <span style={{ color: "#64748b", fontSize: "13px" }}>{run.finished_at ?? "—"}</span>
-                  </div>
-                ))
-              )}
+              {!syncStatus?.last_runs || syncStatus.last_runs.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No sync runs yet.</p>) : (syncStatus.last_runs.map((run: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontSize: "14px" }}>{run.job_name}</span><span style={{ color: run.status === "success" ? "#34d399" : run.status === "failed" ? "#f87171" : "#fbbf24", fontWeight: "bold", fontSize: "13px" }}>{run.status === "success" ? "✅ Success" : run.status === "failed" ? "❌ Failed" : "⏳ Running"}</span><span style={{ color: "#64748b", fontSize: "13px" }}>{run.started_at ?? "—"}</span><span style={{ color: "#64748b", fontSize: "13px" }}>{run.finished_at ?? "—"}</span></div>)))}
             </div>
           </div>
         );
@@ -1158,88 +1042,22 @@ case "dora": {
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🚨 Security Dashboard</h2>
             <p style={{ color: "#64748b", marginBottom: "24px" }}>Security metrics and anomaly review queue</p>
-
-            <button onClick={loadSecurity} disabled={securityLoading} style={{ padding: "10px 24px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", cursor: securityLoading ? "not-allowed" : "pointer", fontWeight: "bold", fontSize: "14px", marginBottom: "24px", opacity: securityLoading ? 0.6 : 1 }}>
-              {securityLoading ? "⏳ Loading..." : "🔄 Load Security Data"}
-            </button>
-
-            {securityMessage && (
-              <div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: securityMessage.startsWith("✅") ? "#14532d" : "#7f1d1d", border: `1px solid ${securityMessage.startsWith("✅") ? "#16a34a" : "#dc2626"}`, color: securityMessage.startsWith("✅") ? "#34d399" : "#f87171" }}>
-                {securityMessage}
-              </div>
-            )}
-
+            <button onClick={loadSecurity} disabled={securityLoading} style={{ padding: "10px 24px", backgroundColor: "#7c3aed", color: "#fff", border: "none", borderRadius: "8px", cursor: securityLoading ? "not-allowed" : "pointer", fontWeight: "bold", fontSize: "14px", marginBottom: "24px", opacity: securityLoading ? 0.6 : 1 }}>{securityLoading ? "⏳ Loading..." : "🔄 Load Security Data"}</button>
+            {securityMessage && (<div style={{ padding: "12px 20px", borderRadius: "10px", marginBottom: "24px", backgroundColor: securityMessage.startsWith("✅") ? "#14532d" : "#7f1d1d", border: `1px solid ${securityMessage.startsWith("✅") ? "#16a34a" : "#dc2626"}`, color: securityMessage.startsWith("✅") ? "#34d399" : "#f87171" }}>{securityMessage}</div>)}
             {securityMetrics && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "28px" }}>
-                {[
-                  { label: "Total Events", value: securityMetrics.total_events, color: "#a78bfa", icon: "📊" },
-                  { label: "Denied Access", value: securityMetrics.denied_count, color: "#f87171", icon: "🚫" },
-                  { label: "Denied Rate", value: `${securityMetrics.denied_rate_pct}%`, color: "#fbbf24", icon: "📈" },
-                  { label: "Period", value: `${securityMetrics.period_days}d`, color: "#60a5fa", icon: "📅" },
-                ].map((card) => (
-                  <div key={card.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <p style={{ color: "#94a3b8", margin: 0, fontSize: "13px" }}>{card.label}</p>
-                      <span style={{ fontSize: "20px" }}>{card.icon}</span>
-                    </div>
-                    <p style={{ fontSize: "32px", fontWeight: "bold", color: card.color, margin: "8px 0 0" }}>{card.value}</p>
-                  </div>
-                ))}
+                {[{ label: "Total Events", value: securityMetrics.total_events, color: "#a78bfa", icon: "📊" }, { label: "Denied Access", value: securityMetrics.denied_count, color: "#f87171", icon: "🚫" }, { label: "Denied Rate", value: `${securityMetrics.denied_rate_pct}%`, color: "#fbbf24", icon: "📈" }, { label: "Period", value: `${securityMetrics.period_days}d`, color: "#60a5fa", icon: "📅" }].map((card) => (<div key={card.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "20px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><p style={{ color: "#94a3b8", margin: 0, fontSize: "13px" }}>{card.label}</p><span style={{ fontSize: "20px" }}>{card.icon}</span></div><p style={{ fontSize: "32px", fontWeight: "bold", color: card.color, margin: "8px 0 0" }}>{card.value}</p></div>))}
               </div>
             )}
-
             {Object.keys(queueSummary).length > 0 && (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "28px" }}>
-                {[
-                  { label: "Pending", value: queueSummary.pending || 0, color: "#fbbf24", bg: "#78350f", border: "#d97706" },
-                  { label: "Confirmed", value: queueSummary.confirmed || 0, color: "#f87171", bg: "#7f1d1d", border: "#dc2626" },
-                  { label: "Dismissed", value: queueSummary.dismissed || 0, color: "#34d399", bg: "#14532d", border: "#16a34a" },
-                ].map((s) => (
-                  <div key={s.label} style={{ backgroundColor: s.bg, border: `1px solid ${s.border}`, borderRadius: "12px", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <p style={{ color: s.color, margin: "0 0 4px", fontSize: "13px", fontWeight: "bold" }}>{s.label}</p>
-                      <p style={{ fontSize: "32px", fontWeight: "bold", color: "#fff", margin: 0 }}>{s.value}</p>
-                    </div>
-                  </div>
-                ))}
+                {[{ label: "Pending", value: queueSummary.pending || 0, color: "#fbbf24", bg: "#78350f", border: "#d97706" }, { label: "Confirmed", value: queueSummary.confirmed || 0, color: "#f87171", bg: "#7f1d1d", border: "#dc2626" }, { label: "Dismissed", value: queueSummary.dismissed || 0, color: "#34d399", bg: "#14532d", border: "#16a34a" }].map((s) => (<div key={s.label} style={{ backgroundColor: s.bg, border: `1px solid ${s.border}`, borderRadius: "12px", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><p style={{ color: s.color, margin: "0 0 4px", fontSize: "13px", fontWeight: "bold" }}>{s.label}</p><p style={{ fontSize: "32px", fontWeight: "bold", color: "#fff", margin: 0 }}>{s.value}</p></div></div>))}
               </div>
             )}
-
             <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
-              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "bold" }}>🔍 Anomaly Review Queue</h3>
-                <span style={{ padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", backgroundColor: "#78350f", color: "#fbbf24", border: "1px solid #d97706" }}>{securityQueue.length} pending</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1.5fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                <span>ID</span><span>Event Ref</span><span>Score</span><span>Time</span><span>Actions</span>
-              </div>
-              {securityQueue.length === 0 ? (
-                <div style={{ padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "#475569" }}>
-                  <span style={{ fontSize: "48px" }}>✅</span>
-                  <p style={{ margin: 0, fontSize: "16px", fontWeight: "bold", color: "#64748b" }}>{securityMetrics ? "No pending items in review queue" : "Click 'Load Security Data' to view queue"}</p>
-                </div>
-              ) : (
-                securityQueue.map((item) => (
-                  <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1.5fr", padding: "16px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}>
-                    <span style={{ color: "#64748b", fontSize: "12px" }}>{item.id.slice(0, 8)}...</span>
-                    <span style={{ color: "#94a3b8", fontSize: "13px" }}>{item.event_ref || "—"}</span>
-                    <span>
-                      <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", backgroundColor: item.score > 0.7 ? "#7f1d1d" : item.score > 0.4 ? "#78350f" : "#1e3a5f", color: item.score > 0.7 ? "#f87171" : item.score > 0.4 ? "#fbbf24" : "#60a5fa" }}>
-                        {item.score.toFixed(2)}
-                      </span>
-                    </span>
-                    <span style={{ color: "#64748b", fontSize: "13px" }}>{new Date(item.created_at).toLocaleString()}</span>
-                    {(isAdmin || isLeadership) ? (
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button onClick={() => handleConfirm(item.id)} style={{ padding: "6px 14px", backgroundColor: "#dc2626", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}>🚨 Confirm</button>
-                        <button onClick={() => handleDismiss(item.id)} style={{ padding: "6px 14px", backgroundColor: "#374151", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}>✅ Dismiss</button>
-                      </div>
-                    ) : (
-                      <span style={{ color: "#475569", fontSize: "13px" }}>View only</span>
-                    )}
-                  </div>
-                ))
-              )}
+              <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}><h3 style={{ margin: 0, fontSize: "18px", fontWeight: "bold" }}>🔍 Anomaly Review Queue</h3><span style={{ padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", backgroundColor: "#78350f", color: "#fbbf24", border: "1px solid #d97706" }}>{securityQueue.length} pending</span></div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1.5fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>ID</span><span>Event Ref</span><span>Score</span><span>Time</span><span>Actions</span></div>
+              {securityQueue.length === 0 ? (<div style={{ padding: "60px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "12px", color: "#475569" }}><span style={{ fontSize: "48px" }}>✅</span><p style={{ margin: 0, fontSize: "16px", fontWeight: "bold", color: "#64748b" }}>{securityMetrics ? "No pending items in review queue" : "Click 'Load Security Data' to view queue"}</p></div>) : (securityQueue.map((item) => (<div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1.5fr", padding: "16px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ color: "#64748b", fontSize: "12px" }}>{item.id.slice(0, 8)}...</span><span style={{ color: "#94a3b8", fontSize: "13px" }}>{item.event_ref || "—"}</span><span><span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "12px", fontWeight: "bold", backgroundColor: item.score > 0.7 ? "#7f1d1d" : item.score > 0.4 ? "#78350f" : "#1e3a5f", color: item.score > 0.7 ? "#f87171" : item.score > 0.4 ? "#fbbf24" : "#60a5fa" }}>{item.score.toFixed(2)}</span></span><span style={{ color: "#64748b", fontSize: "13px" }}>{new Date(item.created_at).toLocaleString()}</span>{(isAdmin || isLeadership) ? (<div style={{ display: "flex", gap: "8px" }}><button onClick={() => handleConfirm(item.id)} style={{ padding: "6px 14px", backgroundColor: "#dc2626", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}>🚨 Confirm</button><button onClick={() => handleDismiss(item.id)} style={{ padding: "6px 14px", backgroundColor: "#374151", color: "#fff", border: "none", borderRadius: "6px", cursor: "pointer", fontSize: "13px", fontWeight: "bold" }}>✅ Dismiss</button></div>) : (<span style={{ color: "#475569", fontSize: "13px" }}>View only</span>)}</div>)))}
             </div>
           </div>
         );
