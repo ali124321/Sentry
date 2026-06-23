@@ -28,6 +28,11 @@ from app.core.database import get_db
 from app.routes.defect_risk import router as defect_risk_router
 from app.routes.suppression_test import router as suppression_router
 from app.routes.ml_framework import router as ml_framework_router
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from app.core.rate_limit import limiter
+from app.core.security import validate_secrets
+
 router = APIRouter(prefix="/api/v1/defect-risk", tags=["defect-risk"])
 
 
@@ -81,11 +86,15 @@ async def get_defect_risk_scores(
         }
         for row in rows
     ]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_secrets()
     start_scheduler()
     yield
     stop_scheduler()
+
 
 app = FastAPI(
     title="Sentry Backend",
@@ -95,6 +104,9 @@ app = FastAPI(
     redoc_url="/redoc",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -125,9 +137,12 @@ app.include_router(dora_kpi_router)
 app.include_router(defect_risk_router)
 app.include_router(suppression_router)
 app.include_router(ml_framework_router)
+
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to the Sentry Backend API!"}
+
 
 @app.get("/health")
 async def health():
