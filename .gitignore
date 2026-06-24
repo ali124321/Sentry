@@ -4,3 +4,4 @@ __pycache__/
 sentry-backend/.env
 repos/
 sentry-backend/repos/
+**/.DS_Store

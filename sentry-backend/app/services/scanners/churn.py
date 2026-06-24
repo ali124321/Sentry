@@ -8,6 +8,7 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,7 @@ async def scan_repo_churn(
         churn_90d = s90.get("additions", 0) + s90.get("deletions", 0)
 
         await db.execute(
-            """
+            text("""
             INSERT INTO code_file_metric
                 (repository_id, commit_sha, filename,
                  churn_30d, churn_90d,
@@ -119,7 +120,7 @@ async def scan_repo_churn(
                  :churn_30d, :churn_90d,
                  :commit_count_30d, :commit_count_90d,
                  :distinct_authors_30d, now())
-            ON CONFLICT ON CONSTRAINT uq_code_file_metric_repo_file_commit
+            ON CONFLICT (repository_id, filename, commit_sha)
             DO UPDATE SET
                 churn_30d             = EXCLUDED.churn_30d,
                 churn_90d             = EXCLUDED.churn_90d,
@@ -127,7 +128,7 @@ async def scan_repo_churn(
                 commit_count_90d      = EXCLUDED.commit_count_90d,
                 distinct_authors_30d  = EXCLUDED.distinct_authors_30d,
                 churn_complexity_score = EXCLUDED.churn_30d * COALESCE(code_file_metric.complexity_score, 0)
-            """,
+            """),
             {
                 "repository_id": repository_id,
                 "commit_sha": commit_sha,

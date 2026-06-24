@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import lizard
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.code_quality import CodeFileMetric
@@ -86,7 +87,7 @@ async def scan_repo_complexity(
         language = LANGUAGE_MAP.get(file_path.suffix)
 
         await db.execute(
-            """
+            text("""
             INSERT INTO code_file_metric
                 (repository_id, commit_sha, filename, language,
                  complexity_score, cognitive_complexity, loc,
@@ -95,14 +96,14 @@ async def scan_repo_complexity(
                 (:repository_id, :commit_sha, :filename, :language,
                  :complexity_score, :cognitive_complexity, :loc,
                  :functions_count, :snapshotted_at)
-            ON CONFLICT ON CONSTRAINT uq_code_file_metric_repo_file_commit
+            ON CONFLICT (repository_id, filename, commit_sha)
             DO UPDATE SET
                 complexity_score     = EXCLUDED.complexity_score,
                 cognitive_complexity = EXCLUDED.cognitive_complexity,
                 loc                  = EXCLUDED.loc,
                 functions_count      = EXCLUDED.functions_count,
                 snapshotted_at       = EXCLUDED.snapshotted_at
-            """,
+            """),
             {
                 "repository_id": repository_id,
                 "commit_sha": commit_sha,
