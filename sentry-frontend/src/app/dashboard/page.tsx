@@ -97,7 +97,7 @@ type QASummary = {
 };
 
 export default function Dashboard() {
-  const { logout, token, login } = useAuth();
+  const { logout, token, login, selectedRepoId } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
@@ -182,10 +182,10 @@ export default function Dashboard() {
           fetch("http://localhost:8000/api/v1/occupancy-kpi/trend?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyTrend(data.data || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/forecast?forecast_days=7", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setOccupancyForecast(data.forecast || []));
           fetch("http://localhost:8000/api/v1/occupancy-kpi/mobile-adoption?days=365", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setMobileAdoption(data.data || []));
-          fetch("http://localhost:8000/api/code-quality/summary?repository_id=1", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setCodeQualitySummary(data)).catch(() => setCodeQualitySummary(null));
-          fetch("http://localhost:8000/api/code-quality/complexity?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setComplexityFiles(data.files || [])).catch(() => setComplexityFiles([]));
-          fetch("http://localhost:8000/api/code-quality/churn?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setChurnHotspots(data.hotspots || [])).catch(() => setChurnHotspots([]));
-          fetch("http://localhost:8000/api/code-quality/secrets?repository_id=1&limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSecretAlerts(data.alerts || [])).catch(() => setSecretAlerts([]));
+          fetch(`http://localhost:8000/api/code-quality/summary?repository_id=${selectedRepoId || 1}`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setCodeQualitySummary(data)).catch(() => setCodeQualitySummary(null));
+          fetch(`http://localhost:8000/api/code-quality/complexity?repository_id=${selectedRepoId || 1}&limit=10`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setComplexityFiles(data.files || [])).catch(() => setComplexityFiles([]));
+          fetch(`http://localhost:8000/api/code-quality/churn?repository_id=${selectedRepoId || 1}&limit=10`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setChurnHotspots(data.hotspots || [])).catch(() => setChurnHotspots([]));
+          fetch(`http://localhost:8000/api/code-quality/secrets?repository_id=${selectedRepoId || 1}&limit=10`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSecretAlerts(data.alerts || [])).catch(() => setSecretAlerts([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/deployment-frequency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraDeployFreq(data.data || [])).catch(() => setDoraDeployFreq([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/lead-time?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraLeadTime(data)).catch(() => setDoraLeadTime({ data: [] }));
           fetch("http://localhost:8000/api/v1/dora-kpi/change-failure-rate?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraCFR(data.data || [])).catch(() => setDoraCFR([]));
@@ -369,6 +369,7 @@ export default function Dashboard() {
   };
 
   const menuItems = [
+    { id: "repos", icon: "📦", label: "Repositories", show: true },
     { id: "dashboard", icon: "🏠", label: "Dashboard", show: true },
     { id: "activity", icon: "📋", label: "Recent Activity", show: true },
     { id: "alerts", icon: "🔔", label: "View Alerts", show: canViewAlerts },
@@ -389,6 +390,9 @@ export default function Dashboard() {
 
   const renderContent = () => {
     switch (activeMenu) {
+      case "repos":
+        router.push("/dashboard/repos");
+        return <p style={{ color: "#64748b" }}>Redirecting to repositories...</p>;
       case "dashboard":
         return (
           <div>

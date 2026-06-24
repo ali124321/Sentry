@@ -19,7 +19,7 @@ GITHUB_EMAIL_URL = "https://api.github.com/user/emails"
 
 @router.get("/github")
 async def github_login():
-    url = f"{GITHUB_AUTH_URL}?client_id={settings.GITHUB_CLIENT_ID}&redirect_uri={settings.GITHUB_REDIRECT_URI}&scope=user:email"
+    url = f"{GITHUB_AUTH_URL}?client_id={settings.GITHUB_CLIENT_ID}&redirect_uri={settings.GITHUB_REDIRECT_URI}&scope=user:email%20repo"
     return RedirectResponse(url)
 
 
@@ -74,24 +74,41 @@ async def github_callback(code: str, db: AsyncSession = Depends(get_db)):
     if not user:
         # Create new user
         await db.execute(text("""
-            INSERT INTO users (id, email, full_name, role, is_active, hashed_password, created_at)
-            VALUES (:id, :email, :full_name, 'employee', true, '', NOW())
+            INSERT INTO users (id, email, full_name, role, is_active, hashed_password,
+                               github_access_token, github_username, created_at)
+            VALUES (:id, :email, :full_name, 'employee', true, '',
+                    :github_token, :github_username, NOW())
         """), {
             "id": str(uuid.uuid4()),
             "email": primary_email,
             "full_name": github_user.get("name") or github_user.get("login"),
+            "github_token": access_token,
+            "github_username": github_user.get("login"),
+        })
+        await db.commit()
+    else:
+        # Update existing user's GitHub credentials
+        await db.execute(text("""
+            UPDATE users SET github_access_token = :github_token,
+                             github_username = :github_username
+            WHERE email = :email
+        """), {
+            "github_token": access_token,
+            "github_username": github_user.get("login"),
+            "email": primary_email,
         })
         await db.commit()
 
-        result = await db.execute(
-            text("SELECT * FROM users WHERE email = :email"),
-            {"email": primary_email}
-        )
-        user = result.mappings().first()
+    # Re-fetch user to get current id
+    result = await db.execute(
+        text("SELECT * FROM users WHERE email = :email"),
+        {"email": primary_email}
+    )
+    user = result.mappings().first()
 
-    # Generate JWT
+    # Generate JWT — use user id (UUID), not email
     payload = {
-        "sub": user["email"],
+        "sub": str(user["id"]),
         "exp": datetime.utcnow() + timedelta(minutes=30)
     }
     jwt_token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)

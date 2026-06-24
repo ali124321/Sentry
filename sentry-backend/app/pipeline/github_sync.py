@@ -12,11 +12,11 @@ logger = logging.getLogger(__name__)
 
 # ── Rate-limit-aware GitHub API helper ──────────────────────────────────────
 
-def get_github_client() -> Github:
-    token = auth_settings.GITHUB_TOKEN
-    if not token:
-        raise ValueError("GITHUB_TOKEN not set in .env")
-    return Github(token)
+def get_github_client(token: str = None) -> Github:
+    t = token or auth_settings.GITHUB_TOKEN
+    if not t:
+        raise ValueError("No GitHub token available (pass one or set GITHUB_TOKEN in .env)")
+    return Github(t)
 
 
 def rate_limit_wait(gh: Github, min_remaining: int = 100):
@@ -223,6 +223,7 @@ async def sync_github(
     repo_name: str,
     local_clone_path: str,
     since: datetime = None,
+    github_token: str = None,
 ):
     logger.info(f"Starting GitHub sync for {repo_name}")
 
@@ -231,7 +232,7 @@ async def sync_github(
     await save_file_changes(db, changes)
 
     # Step 2 — Fetch from API
-    gh = get_github_client()
+    gh = get_github_client(token=github_token)
 
     prs = fetch_pull_requests(gh, repo_name)
     await save_pull_requests(db, prs)

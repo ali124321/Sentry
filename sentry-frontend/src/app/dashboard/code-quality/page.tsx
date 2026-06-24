@@ -1,13 +1,30 @@
+"use client";
+
+import { useAuth } from "@/lib/auth/AuthContext";
 import SummaryCards from "@/components/code-quality/SummaryCards";
 import ComplexityPanel from "@/components/code-quality/ComplexityPanel";
 import ChurnPanel from "@/components/code-quality/ChurnPanel";
 import LintPanel from "@/components/code-quality/LintPanel";
 import SecretAlertFeed from "@/components/code-quality/SecretAlertFeed";
-
-// Replace with dynamic repo selection as needed
-const DEFAULT_REPO_ID = 1;
+import Link from "next/link";
 
 export default function CodeQualityPage() {
+  const { selectedRepoId } = useAuth();
+  const repoId = selectedRepoId || 1;
+
+  if (!selectedRepoId) {
+    return (
+      <div className="p-6 max-w-screen-xl mx-auto">
+        <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "32px", textAlign: "center" }}>
+          <p style={{ color: "#94a3b8", marginBottom: "12px" }}>No repository selected.</p>
+          <Link href="/dashboard/repos" style={{ color: "#f97316", fontWeight: 600 }}>
+            Select a repository
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6 max-w-screen-xl mx-auto">
       {/* Page header */}
@@ -19,18 +36,18 @@ export default function CodeQualityPage() {
       </div>
 
       {/* KPI summary row */}
-      <SummaryCards repositoryId={DEFAULT_REPO_ID} />
+      <SummaryCards repositoryId={repoId} />
 
       {/* Main panels — 2 column grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ComplexityPanel repositoryId={DEFAULT_REPO_ID} />
-        <ChurnPanel repositoryId={DEFAULT_REPO_ID} />
+        <ComplexityPanel repositoryId={repoId} />
+        <ChurnPanel repositoryId={repoId} />
       </div>
 
       {/* Lint + Secrets — 2 column grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <LintPanel repositoryId={DEFAULT_REPO_ID} />
-        <SecretAlertFeed repositoryId={DEFAULT_REPO_ID} />
+        <LintPanel repositoryId={repoId} />
+        <SecretAlertFeed repositoryId={repoId} />
       </div>
     </div>
   );

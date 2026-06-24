@@ -35,6 +35,7 @@ from app.core.security import validate_secrets
 from app.routes.governance import router as governance_router
 from app.routes.cohort_kpi import router as cohort_kpi_router
 from app.routes.seed import router as seed_router
+from app.routes.repository import router as repository_router
 router = APIRouter(prefix="/api/v1/defect-risk", tags=["defect-risk"])
 
 
@@ -142,6 +143,7 @@ app.include_router(ml_framework_router)
 app.include_router(governance_router)
 app.include_router(cohort_kpi_router)
 app.include_router(seed_router)
+app.include_router(repository_router)
 
 @app.get("/")
 async def root():

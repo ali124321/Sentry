@@ -16,6 +16,8 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, default="member")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    github_access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    github_username: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
