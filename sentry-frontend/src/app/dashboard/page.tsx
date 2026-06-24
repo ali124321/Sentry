@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 import ProtectedRoute from "@/lib/auth/ProtectedRoute";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useEffect, useState } from "react";
@@ -96,6 +97,33 @@ type QASummary = {
   };
 };
 
+function RepoSelector() {
+  const { token, selectedRepoId, setSelectedRepoId } = useAuth();
+  const [repos, setRepos] = React.useState<{ id: number; github_full_name: string }[]>([]);
+
+  React.useEffect(() => {
+    if (!token) return;
+    fetch("http://localhost:8000/api/v1/repos/", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => { if (Array.isArray(d)) setRepos(d); });
+  }, [token]);
+
+  if (repos.length === 0) return null;
+
+  return (
+    <select
+      value={selectedRepoId || ""}
+      onChange={(e) => setSelectedRepoId(e.target.value ? Number(e.target.value) : null)}
+      style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", color: "#e2e8f0", borderRadius: "8px", padding: "6px 12px", fontSize: "13px", cursor: "pointer" }}
+    >
+      <option value="">Select a repo...</option>
+      {repos.map((r) => (
+        <option key={r.id} value={r.id}>{r.github_full_name}</option>
+      ))}
+    </select>
+  );
+}
+
 export default function Dashboard() {
   const { logout, token, login, selectedRepoId } = useAuth();
   const router = useRouter();
@@ -165,6 +193,9 @@ export default function Dashboard() {
     const githubToken = searchParams.get("token");
     if (githubToken) { login(githubToken); router.replace("/dashboard"); }
   }, [searchParams]);
+  useEffect(() => {
+    if (activeMenu === "repos") { router.push("/dashboard/repos"); }
+  }, [activeMenu]);
 
   useEffect(() => {
     if (token) {
@@ -391,8 +422,7 @@ export default function Dashboard() {
   const renderContent = () => {
     switch (activeMenu) {
       case "repos":
-        router.push("/dashboard/repos");
-        return <p style={{ color: "#64748b" }}>Redirecting to repositories...</p>;
+        return null;
       case "dashboard":
         return (
           <div>
@@ -1124,8 +1154,15 @@ export default function Dashboard() {
             <button onClick={logout} style={{ width: "100%", padding: "10px", backgroundColor: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "bold" }}>Logout</button>
           </div>
         </div>
-        <div style={{ marginLeft: "240px", flex: 1, padding: "40px 32px" }}>
-          {renderContent()}
+        <div style={{ marginLeft: "240px", flex: 1 }}>
+          {/* Top bar with repo selector */}
+          <div style={{ padding: "12px 32px", borderBottom: "1px solid #2a2a4a", backgroundColor: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "12px", position: "sticky", top: 0, zIndex: 10 }}>
+            <span style={{ color: "#64748b", fontSize: "13px" }}>Repository:</span>
+            <RepoSelector />
+          </div>
+          <div style={{ padding: "40px 32px" }}>
+            {renderContent()}
+          </div>
         </div>
       </div>
     </ProtectedRoute>

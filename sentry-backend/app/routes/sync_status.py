@@ -39,10 +39,10 @@ async def get_sync_status(
         gh = get_github_client()
         rate = gh.get_rate_limit()
         rate_limit_info = {
-            "remaining": rate.core.remaining,
-            "limit": rate.core.limit,
-            "reset_at": str(rate.core.reset),
-            "used": rate.core.limit - rate.core.remaining,
+            "remaining": rate.rate.remaining,
+            "limit": rate.rate.limit,
+            "reset_at": str(rate.rate.reset),
+            "used": rate.rate.limit - rate.rate.remaining,
         }
     except Exception as e:
         try:

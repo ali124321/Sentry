@@ -1,6 +1,6 @@
 "use client";
-
 import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 interface Summary {
   overall_risk_score: number;
@@ -11,78 +11,46 @@ interface Summary {
 }
 
 export default function SummaryCards({ repositoryId }: { repositoryId: number }) {
+  const { token } = useAuth();
   const [data, setData] = useState<Summary | null>(null);
 
   useEffect(() => {
-    fetch(`/api/code-quality/summary?repository_id=${repositoryId}`)
+    if (!token) return;
+    fetch(`http://localhost:8000/api/code-quality/summary?repository_id=${repositoryId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => r.json())
-      .then(setData);
-  }, [repositoryId]);
+      .then((d) => { if (d.complexity) setData(d); });
+  }, [repositoryId, token]);
 
   if (!data) return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "16px" }}>
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="h-24 rounded-xl bg-gray-100 dark:bg-gray-800 animate-pulse" />
+        <div key={i} style={{ height: "96px", borderRadius: "16px", backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a" }} />
       ))}
     </div>
   );
 
-  const riskColor =
-    data.overall_risk_score >= 60 ? "text-red-600 dark:text-red-400"
-    : data.overall_risk_score >= 30 ? "text-orange-500 dark:text-orange-400"
-    : "text-green-600 dark:text-green-400";
+  const riskColor = data.overall_risk_score >= 60 ? "#f87171" : data.overall_risk_score >= 30 ? "#fb923c" : "#34d399";
 
   const cards = [
-    {
-      label: "Risk Score",
-      value: `${data.overall_risk_score}/100`,
-      sub: "Overall",
-      valueClass: riskColor,
-      icon: "🎯",
-    },
-    {
-      label: "Complex Files",
-      value: data.complexity.high_complexity_files,
-      sub: `avg ${data.complexity.avg_complexity} score`,
-      valueClass: data.complexity.high_complexity_files > 10 ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100",
-      icon: "🧩",
-    },
-    {
-      label: "Hotspots",
-      value: data.churn.critical_hotspots,
-      sub: `${data.churn.active_files_30d} active files`,
-      valueClass: data.churn.critical_hotspots > 5 ? "text-orange-500" : "text-gray-900 dark:text-gray-100",
-      icon: "🔥",
-    },
-    {
-      label: "Lint Errors",
-      value: data.lint.errors?.toLocaleString(),
-      sub: `${data.lint.total_open_findings?.toLocaleString()} total findings`,
-      valueClass: data.lint.errors > 50 ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-gray-100",
-      icon: "🔍",
-    },
-    {
-      label: "Secret Alerts",
-      value: data.secrets.open_alerts,
-      sub: `${data.secrets.active_secrets} active · ${data.secrets.bypass_count} bypassed`,
-      valueClass: data.secrets.open_alerts > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400",
-      icon: "🔑",
-    },
+    { label: "Risk Score", value: `${data.overall_risk_score}/100`, sub: "Overall", color: riskColor, icon: "🎯" },
+    { label: "Complex Files", value: data.complexity.high_complexity_files, sub: `avg ${data.complexity.avg_complexity} score`, color: data.complexity.high_complexity_files > 10 ? "#f87171" : "#e2e8f0", icon: "🧩" },
+    { label: "Hotspots", value: data.churn.critical_hotspots, sub: `${data.churn.active_files_30d} active files`, color: data.churn.critical_hotspots > 5 ? "#fb923c" : "#e2e8f0", icon: "🔥" },
+    { label: "Lint Errors", value: data.lint.errors?.toLocaleString(), sub: `${data.lint.total_open_findings?.toLocaleString()} total findings`, color: data.lint.errors > 50 ? "#f87171" : "#e2e8f0", icon: "🔍" },
+    { label: "Secret Alerts", value: data.secrets.open_alerts, sub: `${data.secrets.active_secrets} active · ${data.secrets.bypass_count} bypassed`, color: data.secrets.open_alerts > 0 ? "#f87171" : "#34d399", icon: "🔑" },
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "16px" }}>
       {cards.map((card, i) => (
-        <div
-          key={i}
-          className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-4"
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-base">{card.icon}</span>
-            <span className="text-xs text-gray-500 font-medium">{card.label}</span>
+        <div key={i} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <span style={{ fontSize: "16px" }}>{card.icon}</span>
+            <span style={{ color: "#94a3b8", fontSize: "12px", fontWeight: "bold" }}>{card.label}</span>
           </div>
-          <p className={`text-2xl font-bold ${card.valueClass}`}>{card.value}</p>
-          <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
+          <p style={{ fontSize: "28px", fontWeight: "bold", color: card.color, margin: "0 0 4px" }}>{card.value}</p>
+          <p style={{ color: "#64748b", fontSize: "11px", margin: 0 }}>{card.sub}</p>
         </div>
       ))}
     </div>

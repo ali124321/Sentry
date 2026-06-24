@@ -10,7 +10,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from app.models.base import Base
+from app.core.database import Base
 
 
 # --------------------------------------------------------------------------- #
@@ -65,7 +65,7 @@ class LintFinding(Base):
     repository_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     commit_sha: Mapped[str] = mapped_column(CHAR(40), nullable=False)
     check_run_id: Mapped[Optional[int]] = mapped_column(
-        BigInteger, ForeignKey("github_check_run.id", ondelete="SET NULL"), nullable=True
+        BigInteger, ForeignKey("ci_check_run.id", ondelete="SET NULL"), nullable=True
     )
     # location
     filename: Mapped[str] = mapped_column(Text, nullable=False)
@@ -85,7 +85,7 @@ class LintFinding(Base):
     resolved_sha: Mapped[Optional[str]] = mapped_column(CHAR(40), nullable=True)
     ingested_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
-    check_run: Mapped[Optional["GithubCheckRun"]] = relationship("GithubCheckRun")
+    check_run: Mapped[Optional["CICheckRun"]] = relationship("CICheckRun")
 
     __table_args__ = (
         CheckConstraint("severity IN ('error','warning','info','hint')", name="ck_lint_finding_severity"),
@@ -140,9 +140,6 @@ class SecretScanAlert(Base):
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
-    author: Mapped[Optional["DimPerson"]] = relationship("DimPerson", foreign_keys=[author_id])
-    resolved_by: Mapped[Optional["DimPerson"]] = relationship("DimPerson", foreign_keys=[resolved_by_id])
-    push_protection_bypassed_by: Mapped[Optional["DimPerson"]] = relationship("DimPerson", foreign_keys=[push_protection_bypassed_by_id])
 
     __table_args__ = (
         CheckConstraint("state IN ('open','resolved','dismissed')", name="ck_secret_scan_alert_state"),

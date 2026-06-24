@@ -1,5 +1,4 @@
 "use client";
-
 import { useAuth } from "@/lib/auth/AuthContext";
 import SummaryCards from "@/components/code-quality/SummaryCards";
 import ComplexityPanel from "@/components/code-quality/ComplexityPanel";
@@ -14,10 +13,10 @@ export default function CodeQualityPage() {
 
   if (!selectedRepoId) {
     return (
-      <div className="p-6 max-w-screen-xl mx-auto">
-        <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "12px", padding: "32px", textAlign: "center" }}>
-          <p style={{ color: "#94a3b8", marginBottom: "12px" }}>No repository selected.</p>
-          <Link href="/dashboard/repos" style={{ color: "#f97316", fontWeight: 600 }}>
+      <div style={{ minHeight: "100vh", backgroundColor: "#0f0f1a", color: "#ffffff", fontFamily: "Arial, sans-serif", padding: "40px 32px" }}>
+        <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "48px", textAlign: "center" }}>
+          <p style={{ color: "#94a3b8", marginBottom: "16px", fontSize: "16px" }}>No repository selected.</p>
+          <Link href="/dashboard/repos" style={{ color: "#a78bfa", fontWeight: 600, fontSize: "15px" }}>
             Select a repository
           </Link>
         </div>
@@ -26,26 +25,21 @@ export default function CodeQualityPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-screen-xl mx-auto">
-      {/* Page header */}
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Code Quality</h1>
-        <p className="text-sm text-gray-500 mt-1">
+    <div style={{ minHeight: "100vh", backgroundColor: "#0f0f1a", color: "#ffffff", fontFamily: "Arial, sans-serif", padding: "40px 32px" }}>
+      <div style={{ marginBottom: "32px" }}>
+        <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>Code Quality</h2>
+        <p style={{ color: "#64748b", margin: 0, fontSize: "16px" }}>
           Complexity, churn hotspots, lint density and secret scan alerts
         </p>
       </div>
-
-      {/* KPI summary row */}
-      <SummaryCards repositoryId={repoId} />
-
-      {/* Main panels — 2 column grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div style={{ marginBottom: "24px" }}>
+        <SummaryCards repositoryId={repoId} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "24px" }}>
         <ComplexityPanel repositoryId={repoId} />
         <ChurnPanel repositoryId={repoId} />
       </div>
-
-      {/* Lint + Secrets — 2 column grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
         <LintPanel repositoryId={repoId} />
         <SecretAlertFeed repositoryId={repoId} />
       </div>

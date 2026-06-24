@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pydriller import Repository
 from github import Github, GithubException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ def get_github_client(token: str = None) -> Github:
 
 def rate_limit_wait(gh: Github, min_remaining: int = 100):
     """Pause if API rate limit is running low."""
-    rate = gh.get_rate_limit().core
+    rate = gh.get_rate_limit().rate
     logger.info(f"GitHub API rate limit: {rate.remaining}/{rate.limit}")
     if rate.remaining < min_remaining:
         reset_time = rate.reset.timestamp() - time.time()
@@ -50,7 +50,7 @@ def mine_commits(repo_path: str, since: datetime = None, to: datetime = None) ->
     logger.info(f"Mining commits from {repo_path}")
     results = []
 
-    kwargs = {"path_filters": [lambda x: not x.endswith(".lock")]}
+    kwargs = {}
     if since:
         kwargs["since"] = since
     if to:
@@ -58,6 +58,8 @@ def mine_commits(repo_path: str, since: datetime = None, to: datetime = None) ->
 
     for commit in Repository(repo_path, **kwargs).traverse_commits():
         for mod in commit.modified_files:
+            if mod.filename and mod.filename.endswith(".lock"):
+                continue
             results.append({
                 "sha": commit.hash,
                 "author_id": commit.author.email,
@@ -65,7 +67,7 @@ def mine_commits(repo_path: str, since: datetime = None, to: datetime = None) ->
                 "additions": mod.added_lines,
                 "deletions": mod.deleted_lines,
                 "complexity": estimate_complexity(mod.diff),
-                "committed_at": commit.committer_date,
+                "committed_at": commit.committer_date.astimezone(timezone.utc).replace(tzinfo=None),
             })
 
     logger.info(f"Mined {len(results)} file changes from {repo_path}")

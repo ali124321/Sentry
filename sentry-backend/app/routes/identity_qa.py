@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
+from app.auth.dependencies import require_role
 
 router = APIRouter(prefix="/api/v1/identity-qa", tags=["Identity QA"])
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/v1/identity-qa", tags=["Identity QA"])
 # 1. Unresolved badge code %
 # -------------------------------------------------------
 @router.get("/unresolved-codes")
-async def unresolved_codes(db: AsyncSession = Depends(get_db)):
+async def unresolved_codes(db: AsyncSession = Depends(get_db), _=Depends(require_role("admin", "leadership"))):
     result = await db.execute(text("""
         SELECT
             COUNT(*) AS total_events,
@@ -42,7 +43,7 @@ async def unresolved_codes(db: AsyncSession = Depends(get_db)):
 # 2. Duplicate identity clusters
 # -------------------------------------------------------
 @router.get("/duplicate-clusters")
-async def duplicate_clusters(db: AsyncSession = Depends(get_db)):
+async def duplicate_clusters(db: AsyncSession = Depends(get_db), _=Depends(require_role("admin", "leadership"))):
     result = await db.execute(text("""
         SELECT
             lower(email) AS email,
@@ -66,7 +67,7 @@ async def duplicate_clusters(db: AsyncSession = Depends(get_db)):
 # 3. Unmatched sessions
 # -------------------------------------------------------
 @router.get("/unmatched-sessions")
-async def unmatched_sessions(db: AsyncSession = Depends(get_db)):
+async def unmatched_sessions(db: AsyncSession = Depends(get_db), _=Depends(require_role("admin", "leadership"))):
     result = await db.execute(text("""
         WITH ins AS (
             SELECT person_id, event_ts
@@ -112,10 +113,10 @@ async def unmatched_sessions(db: AsyncSession = Depends(get_db)):
 # 4. Overall QA summary
 # -------------------------------------------------------
 @router.get("/summary")
-async def qa_summary(db: AsyncSession = Depends(get_db)):
-    unresolved = await unresolved_codes(db)
-    duplicates = await duplicate_clusters(db)
-    unmatched = await unmatched_sessions(db)
+async def qa_summary(db: AsyncSession = Depends(get_db), _=Depends(require_role("admin", "leadership"))):
+    unresolved = await unresolved_codes(db, _=None)
+    duplicates = await duplicate_clusters(db, _=None)
+    unmatched = await unmatched_sessions(db, _=None)
 
     all_ok = all([
         unresolved["status"] == "OK",

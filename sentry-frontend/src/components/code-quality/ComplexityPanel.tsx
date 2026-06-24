@@ -1,8 +1,8 @@
 "use client";
-
 import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { PanelSkeleton, Empty } from "./shared";
+
 interface FileMetric {
   filename: string;
   language: string;
@@ -12,15 +12,19 @@ interface FileMetric {
 }
 
 export default function ComplexityPanel({ repositoryId }: { repositoryId: number }) {
+  const { token } = useAuth();
   const [data, setData] = useState<FileMetric[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/code-quality/complexity?repository_id=${repositoryId}&limit=15`)
+    if (!token) return;
+    fetch(`http://localhost:8000/api/code-quality/complexity?repository_id=${repositoryId}&limit=15`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((r) => r.json())
       .then((d) => setData(d.files || []))
       .finally(() => setLoading(false));
-  }, [repositoryId]);
+  }, [repositoryId, token]);
 
   const getColor = (score: number) => {
     if (score >= 20) return "#ef4444";
@@ -35,42 +39,39 @@ export default function ComplexityPanel({ repositoryId }: { repositoryId: number
     loc: f.loc,
   }));
 
-  if (loading) return <PanelSkeleton title="Cyclomatic Complexity" />;
+  if (loading) return (
+    <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "24px", height: "360px" }} />
+  );
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-      <div className="flex items-center justify-between mb-4">
+    <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
         <div>
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            Cyclomatic Complexity
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">Top 15 most complex files</p>
+          <h3 style={{ margin: 0, fontSize: "15px", fontWeight: "bold", color: "#e2e8f0" }}>Cyclomatic Complexity</h3>
+          <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#64748b" }}>Top 15 most complex files</p>
         </div>
-        <Legend />
+        <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "#64748b" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#22c55e", display: "inline-block" }} />Low</span>
+          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#f97316", display: "inline-block" }} />Medium</span>
+          <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#ef4444", display: "inline-block" }} />High</span>
+        </div>
       </div>
-
       {chartData.length === 0 ? (
-        <Empty message="No complexity data yet" />
+        <p style={{ color: "#64748b", textAlign: "center", padding: "48px 0" }}>No complexity data yet</p>
       ) : (
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 24 }}>
-            <XAxis type="number" tick={{ fontSize: 11 }} />
-            <YAxis
-              type="category"
-              dataKey="name"
-              width={120}
-              tick={{ fontSize: 11 }}
-              tickFormatter={(v) => (v.length > 18 ? v.slice(0, 18) + "…" : v)}
-            />
+            <XAxis type="number" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} />
+            <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={(v) => (v.length > 18 ? v.slice(0, 18) + "…" : v)} axisLine={false} tickLine={false} />
             <Tooltip
               content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
                 const d = payload[0].payload;
                 return (
-                  <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-xl max-w-xs">
-                    <p className="font-medium truncate mb-1">{d.fullPath}</p>
-                    <p>Complexity: <span className="font-bold">{d.score}</span></p>
-                    <p>LOC: {d.loc}</p>
+                  <div style={{ backgroundColor: "#0f0f1a", border: "1px solid #2a2a4a", borderRadius: "8px", padding: "10px 14px", fontSize: "12px", color: "#e2e8f0" }}>
+                    <p style={{ margin: "0 0 4px", fontWeight: "bold" }}>{d.fullPath}</p>
+                    <p style={{ margin: 0 }}>Complexity: <strong>{d.score}</strong></p>
+                    <p style={{ margin: 0 }}>LOC: {d.loc}</p>
                   </div>
                 );
               }}
@@ -83,16 +84,6 @@ export default function ComplexityPanel({ repositoryId }: { repositoryId: number
           </BarChart>
         </ResponsiveContainer>
       )}
-    </div>
-  );
-}
-
-function Legend() {
-  return (
-    <div className="flex items-center gap-3 text-xs text-gray-500">
-      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Low</span>
-      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />Medium</span>
-      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />High</span>
     </div>
   );
 }
