@@ -90,9 +90,9 @@ def fetch_pull_requests(gh: Github, repo_name: str) -> list[dict]:
             "author_id": pr.user.email if pr.user else None,
             "state": pr.state,
             "merged": pr.merged,
-            "opened_at": pr.created_at,
-            "merged_at": pr.merged_at,
-            "closed_at": pr.closed_at,
+            "opened_at": pr.created_at.replace(tzinfo=None) if pr.created_at else None,
+            "merged_at": pr.merged_at.replace(tzinfo=None) if pr.merged_at else None,
+            "closed_at": pr.closed_at.replace(tzinfo=None) if pr.closed_at else None,
         })
 
     logger.info(f"Fetched {len(prs)} PRs from {repo_name}")
@@ -154,10 +154,11 @@ def fetch_deployments(gh: Github, repo_name: str) -> list[dict]:
         latest_status = statuses[0].state if statuses else None
         deployments.append({
             "sha": dep.sha,
+            "repo": repo_name,
             "environment": dep.environment,
             "deployer_id": dep.creator.email if dep.creator else None,
             "status": latest_status,
-            "deployed_at": dep.created_at,
+            "deployed_at": dep.created_at.replace(tzinfo=None) if dep.created_at else None,
         })
 
     logger.info(f"Fetched {len(deployments)} deployments")
@@ -209,9 +210,9 @@ async def save_deployments(db: AsyncSession, deployments: list[dict]):
     for dep in deployments:
         await db.execute(text("""
             INSERT INTO deployment
-                (id, sha, environment, deployer_id, status, deployed_at)
+                (id, sha, repo, environment, deployer_id, status, deployed_at)
             VALUES
-                (gen_random_uuid(), :sha, :environment, :deployer_id, :status, :deployed_at)
+                (gen_random_uuid(), :sha, :repo, :environment, :deployer_id, :status, :deployed_at)
             ON CONFLICT DO NOTHING
         """), dep)
     await db.commit()

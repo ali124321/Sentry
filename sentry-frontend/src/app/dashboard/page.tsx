@@ -1,10 +1,16 @@
 "use client";
 import React from "react";
+import Sidebar from "@/components/Sidebar";
 import ProtectedRoute from "@/lib/auth/ProtectedRoute";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, AreaChart, ResponsiveContainer, ScatterChart, Scatter, ZAxis } from "recharts";
+import SummaryCards from "@/components/code-quality/SummaryCards";
+import ComplexityPanel from "@/components/code-quality/ComplexityPanel";
+import ChurnPanel from "@/components/code-quality/ChurnPanel";
+import LintPanel from "@/components/code-quality/LintPanel";
+import SecretAlertFeed from "@/components/code-quality/SecretAlertFeed";
 
 function OccupancyTrendChart({ data }: { data: any[] }) {
   return (
@@ -194,6 +200,10 @@ export default function Dashboard() {
     if (githubToken) { login(githubToken); router.replace("/dashboard"); }
   }, [searchParams]);
   useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab) { setActiveMenu(tab); } else { setActiveMenu("dashboard"); }
+  }, [searchParams]);
+  useEffect(() => {
     if (activeMenu === "repos") { router.push("/dashboard/repos"); }
   }, [activeMenu]);
 
@@ -218,16 +228,34 @@ export default function Dashboard() {
           fetch(`http://localhost:8000/api/code-quality/churn?repository_id=${selectedRepoId || 1}&limit=10`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setChurnHotspots(data.hotspots || [])).catch(() => setChurnHotspots([]));
           fetch(`http://localhost:8000/api/code-quality/secrets?repository_id=${selectedRepoId || 1}&limit=10`, { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSecretAlerts(data.alerts || [])).catch(() => setSecretAlerts([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/deployment-frequency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraDeployFreq(data.data || [])).catch(() => setDoraDeployFreq([]));
-          fetch("http://localhost:8000/api/v1/dora-kpi/lead-time?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraLeadTime(data)).catch(() => setDoraLeadTime({ data: [] }));
           fetch("http://localhost:8000/api/v1/dora-kpi/change-failure-rate?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraCFR(data.data || [])).catch(() => setDoraCFR([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/time-to-restore", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraMTTR(data)).catch(() => setDoraMTTR({ data: [] }));
-          fetch("http://localhost:8000/api/v1/dora-kpi/review-latency?days=90", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setDoraReviewLatency(data.data || [])).catch(() => setDoraReviewLatency([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/szz/traces?limit=30", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSzzTraces(Array.isArray(data) ? data : [])).catch(() => setSzzTraces([]));
           fetch("http://localhost:8000/api/v1/dora-kpi/szz/top-bug-introducers?limit=10", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setSzzTopBugIntroducers(Array.isArray(data) ? data : [])).catch(() => setSzzTopBugIntroducers([]));
           fetch("http://localhost:8000/api/v1/defect-risk/watchlist?limit=20", { headers: { Authorization: `Bearer ${token}` } }).then((res) => res.json()).then((data) => setRiskWatchlist(data.watchlist || [])).catch(() => setRiskWatchlist([]));
         });
     }
   }, [token]);
+
+  // DORA: Lead Time + Review Latency, scoped to the selected repo
+  useEffect(() => {
+    if (!token) return;
+    fetch("http://localhost:8000/api/v1/repos/", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((repos) => {
+        const repoList = Array.isArray(repos) ? repos : [];
+        const selected = repoList.find((r: any) => r.id === selectedRepoId);
+        const repoParam = selected ? `&repo=${encodeURIComponent(selected.github_full_name)}` : "";
+        fetch(`http://localhost:8000/api/v1/dora-kpi/lead-time?days=90${repoParam}`, { headers: { Authorization: `Bearer ${token}` } })
+          .then((res) => res.json())
+          .then((data) => setDoraLeadTime(data))
+          .catch(() => setDoraLeadTime({ data: [] }));
+        fetch(`http://localhost:8000/api/v1/dora-kpi/review-latency?days=90${repoParam}`, { headers: { Authorization: `Bearer ${token}` } })
+          .then((res) => res.json())
+          .then((data) => setDoraReviewLatency(data.data || []))
+          .catch(() => setDoraReviewLatency([]));
+      });
+  }, [token, selectedRepoId]);
 
   const isAdmin = user?.role === "admin";
   const isLeadership = user?.role === "leadership";
@@ -689,63 +717,27 @@ export default function Dashboard() {
             )}
           </div>
         );
-
       case "code-quality": {
-        const riskColor = (score: number) => { if (score >= 60) return "#f87171"; if (score >= 30) return "#fbbf24"; return "#34d399"; };
-        const risk = codeQualitySummary?.overall_risk_score ?? 0;
+        const repoId = selectedRepoId || 1;
         return (
           <div>
             <h2 style={{ fontSize: "32px", fontWeight: "bold", margin: "0 0 8px" }}>🛠️ Code Quality</h2>
-            <p style={{ color: "#64748b", marginBottom: "32px" }}>Complexity, churn, lint density and secret/vuln alerts</p>
-            {!codeQualitySummary ? (<p style={{ color: "#64748b" }}>Loading code quality data...</p>) : (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr", gap: "16px", marginBottom: "24px" }}>
-                  <div style={{ backgroundColor: "#1a1a2e", border: `1px solid ${riskColor(risk)}`, borderRadius: "16px", padding: "24px", textAlign: "center" as const }}>
-                    <p style={{ color: "#94a3b8", margin: "0 0 8px", fontSize: "13px" }}>Overall Risk Score</p>
-                    <p style={{ fontSize: "44px", fontWeight: "bold", color: riskColor(risk), margin: 0 }}>{risk}</p>
-                    <p style={{ color: "#64748b", margin: "8px 0 0", fontSize: "12px" }}>out of 100</p>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
-                    {[{ label: "High Complexity Files", value: codeQualitySummary.complexity?.high_complexity_files ?? 0, icon: "🧠", color: "#a78bfa" }, { label: "Critical Hotspots", value: codeQualitySummary.churn?.critical_hotspots ?? 0, icon: "🔥", color: "#fb923c" }, { label: "Open Lint Errors", value: codeQualitySummary.lint?.errors ?? 0, icon: "🐛", color: "#facc15" }, { label: "Open Secret Alerts", value: codeQualitySummary.secrets?.open_alerts ?? 0, icon: "🔐", color: "#f87171" }].map((card) => (
-                      <div key={card.label} style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", padding: "20px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <p style={{ color: "#94a3b8", margin: 0, fontSize: "13px" }}>{card.label}</p>
-                          <span style={{ fontSize: "20px" }}>{card.icon}</span>
-                        </div>
-                        <p style={{ fontSize: "32px", fontWeight: "bold", color: card.color, margin: "8px 0 0" }}>{card.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
-                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🧠 Top Complex Files</h3></div>
-                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>File</span><span>Language</span><span>Complexity</span><span>LOC</span></div>
-                  {complexityFiles.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No complexity data yet.</p>) : (complexityFiles.map((f: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span><span style={{ color: "#94a3b8", fontSize: "13px" }}>{f.language || "—"}</span><span style={{ color: "#a78bfa", fontWeight: "bold" }}>{f.complexity_score}</span><span style={{ color: "#64748b", fontSize: "13px" }}>{f.loc ?? "—"}</span></div>)))}
-                </div>
-                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginBottom: "24px" }}>
-                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🔥 Churn Hotspots</h3></div>
-                  <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}><span>File</span><span>Churn</span><span>Commits</span><span>Hotspot Score</span></div>
-                  {churnHotspots.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No churn data yet.</p>) : (churnHotspots.map((f: any, i: number) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ fontSize: "13px", fontFamily: "monospace" }}>{f.filename}</span><span style={{ color: "#fb923c" }}>{f.churn ?? 0}</span><span style={{ color: "#64748b", fontSize: "13px" }}>{f.commit_count ?? 0}</span><span style={{ color: "#fb923c", fontWeight: "bold" }}>{f.churn_complexity_score ?? "—"}</span></div>)))}
-                </div>
-                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden" }}>
-                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}><h3 style={{ margin: 0, fontSize: "16px" }}>🔐 Secret / Vuln Alert Feed</h3></div>
-                  {secretAlerts.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No open secret alerts. ✅</p>) : (secretAlerts.map((a: any, i: number) => (<div key={a.id ?? i} style={{ padding: "14px 24px", borderBottom: "1px solid #2a2a4a", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><span style={{ backgroundColor: "#7f1d1d", color: "#f87171", fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", marginRight: "10px" }}>{a.secret_type_display || a.secret_type}</span><span style={{ fontSize: "13px", fontFamily: "monospace", color: "#94a3b8" }}>{a.filename}{a.line_number ? `:${a.line_number}` : ""}</span></div><span style={{ color: "#64748b", fontSize: "12px" }}>{a.created_at ? new Date(a.created_at).toLocaleDateString() : ""}</span></div>)))}
-                </div>
-                <div style={{ backgroundColor: "#1a1a2e", border: "1px solid #2a2a4a", borderRadius: "16px", overflow: "hidden", marginTop: "24px" }}>
-                  <div style={{ padding: "20px 24px", borderBottom: "1px solid #2a2a4a" }}>
-                    <h3 style={{ margin: 0, fontSize: "16px" }}>🎯 Risk Watchlist</h3>
-                    <p style={{ margin: "4px 0 0", color: "#64748b", fontSize: "12px" }}>Files ranked by predicted defect risk — focus code review here</p>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "0.5fr 2.5fr 1fr 1fr 1fr 1fr", padding: "14px 24px", backgroundColor: "#0f0f1a", borderBottom: "1px solid #2a2a4a", color: "#64748b", fontSize: "13px", fontWeight: "bold", textTransform: "uppercase" as const }}>
-                    <span>#</span><span>File</span><span>Risk Score</span><span>Level</span><span>Churn (30d)</span><span>Authors</span>
-                  </div>
-                  {riskWatchlist.length === 0 ? (<p style={{ padding: "24px", color: "#64748b" }}>No files scored yet.</p>) : (riskWatchlist.map((f: any) => (<div key={f.rank} style={{ display: "grid", gridTemplateColumns: "0.5fr 2.5fr 1fr 1fr 1fr 1fr", padding: "14px 24px", borderBottom: "1px solid #2a2a4a", alignItems: "center" }}><span style={{ color: "#64748b", fontWeight: "bold" }}>{f.rank}</span><span style={{ fontFamily: "monospace", fontSize: "13px" }}>{f.filename}</span><span style={{ color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399", fontWeight: "bold" }}>{f.risk_score}</span><span><span style={{ backgroundColor: f.risk_level === "high" ? "#7f1d1d" : f.risk_level === "medium" ? "#78350f" : "#14532d", color: f.risk_level === "high" ? "#f87171" : f.risk_level === "medium" ? "#fbbf24" : "#34d399", fontSize: "11px", fontWeight: "bold", padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase" as const }}>{f.risk_level}</span></span><span style={{ color: "#94a3b8" }}>{f.churn_30d ?? "—"}</span><span style={{ color: "#94a3b8" }}>{f.distinct_authors_30d ?? "—"}</span></div>)))}
-                </div>
-              </>
-            )}
+            <p style={{ color: "#64748b", marginBottom: "32px" }}>Complexity, churn hotspots, lint density and secret scan alerts</p>
+            <div style={{ marginBottom: "24px" }}>
+              <SummaryCards repositoryId={repoId} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "24px" }}>
+              <ComplexityPanel repositoryId={repoId} />
+              <ChurnPanel repositoryId={repoId} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+              <LintPanel repositoryId={repoId} />
+              <SecretAlertFeed repositoryId={repoId} />
+            </div>
           </div>
         );
       }
+
 
       case "dora": {
         const totalDeploys = doraDeployFreq.reduce((sum: number, d: any) => sum + (d.total_deployments || 0), 0);
@@ -1132,28 +1124,7 @@ export default function Dashboard() {
   return (
     <ProtectedRoute>
       <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#0f0f1a", color: "#ffffff", fontFamily: "Arial, sans-serif" }}>
-        <div style={{ width: "240px", backgroundColor: "#1a1a2e", borderRight: "1px solid #2a2a4a", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: 0, height: "100vh" }}>
-          <div style={{ padding: "24px 20px", borderBottom: "1px solid #2a2a4a", display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "24px" }}>🛡️</span>
-            <h1 style={{ fontSize: "20px", fontWeight: "bold", margin: 0, color: "#a78bfa" }}>Sentry</h1>
-          </div>
-          {user && (
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid #2a2a4a" }}>
-              <p style={{ margin: "0 0 4px", fontSize: "14px", fontWeight: "bold" }}>{user.full_name}</p>
-              <span style={{ backgroundColor: roleColor[user.role] || "#a78bfa", color: "#000", fontSize: "10px", fontWeight: "bold", padding: "2px 8px", borderRadius: "20px", textTransform: "uppercase" as const }}>{user.role}</span>
-            </div>
-          )}
-          <nav style={{ flex: 1, padding: "16px 0", overflowY: "auto" as const }}>
-            {menuItems.filter((item) => item.show).map((item) => (
-              <button key={item.id} onClick={() => setActiveMenu(item.id)} style={{ width: "100%", padding: "12px 20px", display: "flex", alignItems: "center", gap: "12px", backgroundColor: activeMenu === item.id ? "#2a2a4a" : "transparent", color: activeMenu === item.id ? "#a78bfa" : "#94a3b8", border: "none", borderLeft: activeMenu === item.id ? "3px solid #a78bfa" : "3px solid transparent", cursor: "pointer", fontSize: "14px", fontWeight: activeMenu === item.id ? "bold" : "normal", textAlign: "left" as const }}>
-                <span>{item.icon}</span><span>{item.label}</span>
-              </button>
-            ))}
-          </nav>
-          <div style={{ padding: "16px 20px", borderTop: "1px solid #2a2a4a" }}>
-            <button onClick={logout} style={{ width: "100%", padding: "10px", backgroundColor: "#dc2626", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", fontWeight: "bold" }}>Logout</button>
-          </div>
-        </div>
+        <Sidebar user={user} />
         <div style={{ marginLeft: "240px", flex: 1 }}>
           {/* Top bar with repo selector */}
           <div style={{ padding: "12px 32px", borderBottom: "1px solid #2a2a4a", backgroundColor: "#1a1a2e", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "12px", position: "sticky", top: 0, zIndex: 10 }}>

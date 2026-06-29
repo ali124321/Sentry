@@ -65,6 +65,7 @@ class Deployment(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     sha: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    repo: Mapped[str] = mapped_column(String, nullable=True, index=True)  # e.g. "ali124321/Sentry"
     environment: Mapped[str] = mapped_column(String, nullable=False)  # production, staging, dev
     deployer_id: Mapped[str] = mapped_column(String, nullable=True)  # -> dim_person.person_id
     status: Mapped[str] = mapped_column(String, nullable=True)  # pending, success, failure
